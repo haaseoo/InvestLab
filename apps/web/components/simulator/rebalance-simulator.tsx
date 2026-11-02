@@ -4,6 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import { type FormEvent, useMemo, useState } from "react";
 
 import { PnlText } from "@/components/pnl-text";
+import { SaveSimulation } from "@/components/simulator/save-simulation";
 import {
   AssumptionList,
   DecimalInput,
@@ -279,7 +280,10 @@ export function RebalanceSimulator({
 
       <div className="min-w-0">
         {mutation.data && mutation.data.dimension === dimension ? (
-          <RebalanceResultView result={mutation.data} currency={currency} />
+          <div className="space-y-4">
+            <RebalanceResultView result={mutation.data} currency={currency} />
+            <SaveSimulation type="rebalance" input={mutation.variables} result={mutation.data} />
+          </div>
         ) : (
           <p className="rounded-xl border border-dashed p-6 text-center text-sm text-subtle">
             목표 비중을 입력하고 계산하면 항목별 가상 조정 금액이 여기에 표시됩니다.

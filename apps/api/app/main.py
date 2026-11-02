@@ -4,13 +4,16 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import DBAPIError
 
+from app.core.auth import SupabaseTokenVerifier
 from app.core.config import Settings, get_settings
-from app.core.errors import AppError
+from app.core.errors import AppError, DatabaseUnavailableError
 from app.core.logging import install_log_masking
+from app.db.database import Database
 from app.providers.kis import KISPortfolioProvider
 from app.providers.mock import MockPortfolioProvider
-from app.routers import analytics, portfolio, simulations
+from app.routers import account, analytics, portfolio, simulations, snapshots
 from app.schemas.portfolio import Source
 
 logger = logging.getLogger("investlab")
@@ -29,17 +32,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="InvestLab API", version="0.1.0")
     app.state.settings = settings
-    # 토큰 검증기는 Phase 3에서 연결한다. None인 동안 LIVE 접근은 모두 거부된다.
-    app.state.token_verifier = None
+    # SUPABASE_URL이 없으면 검증기가 없고, 로그인이 필요한 요청은 모두 거부된다.
+    app.state.token_verifier = (
+        SupabaseTokenVerifier(
+            settings.supabase_url,
+            audience=settings.jwt_audience,
+            leeway_seconds=settings.jwt_leeway_seconds,
+        )
+        if settings.supabase_url
+        else None
+    )
+    # DATABASE_URL이 없으면 저장 기능만 비활성화된다. Mock 조회는 DB 없이 동작한다.
+    app.state.db = (
+        Database(settings.database_url.get_secret_value()) if settings.database_url else None
+    )
     app.state.providers = {
         Source.MOCK: MockPortfolioProvider(settings.mock_data_dir),
-        Source.LIVE: KISPortfolioProvider(settings, auth_available=False),
+        Source.LIVE: KISPortfolioProvider(
+            settings,
+            auth_available=app.state.token_verifier is not None,
+            database_available=app.state.db is not None,
+        ),
     }
 
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
         allow_headers=["Authorization", "Content-Type"],
     )
 
@@ -67,6 +86,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             {"fields": fields, "reasons": reasons},
         )
 
+    @app.exception_handler(DBAPIError)
+    async def handle_db_error(_: Request, exc: DBAPIError) -> JSONResponse:
+        # 원인 메시지에는 SQL이 들어갈 수 있으므로 응답에 싣지 않는다.
+        logger.error(
+            "Database error: %s", type(exc.orig).__name__ if exc.orig else type(exc).__name__
+        )
+        error = DatabaseUnavailableError()
+        return _error(error.status_code, error.code, error.message)
+
     @app.exception_handler(Exception)
     async def handle_unexpected(_: Request, exc: Exception) -> JSONResponse:
         logger.exception("Unhandled error", exc_info=exc)
@@ -79,6 +107,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(portfolio.router)
     app.include_router(analytics.router)
     app.include_router(simulations.router)
+    app.include_router(account.router)
+    app.include_router(snapshots.router)
     return app
 
 

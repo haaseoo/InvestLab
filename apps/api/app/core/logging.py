@@ -2,6 +2,7 @@
 
 import logging
 import re
+import traceback
 
 _BEARER = re.compile(r"Bearer\s+[\w\-.~+/]+=*", re.IGNORECASE)
 _SECRET_PAIR = re.compile(
@@ -10,9 +11,17 @@ _SECRET_PAIR = re.compile(
     re.IGNORECASE,
 )
 _ACCOUNT = re.compile(r"\b\d{8}-?\d{2}\b")
+# postgresql://user:password@host 형태의 연결 문자열
+_DSN = re.compile(r"\b(postgres(?:ql)?(?:\+\w+)?)://[^\s:/@]+:[^\s@]+@", re.IGNORECASE)
+# JWT(header.payload.signature)
+_JWT = re.compile(r"\beyJ[\w-]{5,}\.[\w-]{5,}\.[\w-]+")
+_SUPABASE_KEY = re.compile(r"\bsb_(publishable|secret)_[\w-]+")
 
 
 def mask_sensitive(text: str) -> str:
+    text = _DSN.sub(r"\1://***:***@", text)
+    text = _JWT.sub("<jwt>", text)
+    text = _SUPABASE_KEY.sub(r"sb_\1_***", text)
     text = _BEARER.sub("Bearer ***", text)
     text = _SECRET_PAIR.sub(lambda m: f"{m.group(1)}{m.group(2)}***", text)
     return _ACCOUNT.sub("********-**", text)
@@ -38,6 +47,9 @@ def install_log_masking() -> None:
                 mask_sensitive(arg) if isinstance(arg, str) else arg for arg in record.args or ()
             )
             return record
+        if record.exc_info and record.exc_info[0] is not None:
+            # 포매터는 exc_text가 있으면 다시 만들지 않으므로, 마스킹한 트레이스백을 미리 넣어 둔다.
+            record.exc_text = mask_sensitive("".join(traceback.format_exception(*record.exc_info)))
         try:
             record.msg = mask_sensitive(record.getMessage())
             record.args = ()

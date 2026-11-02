@@ -402,3 +402,10 @@ class TestSimulationApi:
         assert send(client, params={"source": "live"}).status_code == 503
         response = send(live_client, params={"source": "live"}, headers=bearer("owner-token"))
         assert response.json()["error"]["code"] == "LIVE_NOT_IMPLEMENTED"
+
+
+def test_blank_env_values_are_unset():
+    settings = make_settings(database_url="", supabase_url="  ", live_owner_user_id="")
+    assert settings.database_url is None
+    assert settings.supabase_url is None
+    assert settings.live_owner_user_id is None

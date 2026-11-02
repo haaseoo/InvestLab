@@ -66,3 +66,45 @@ class SimulationInputError(AppError):
     status_code = 422
     code = "INVALID_SIMULATION_INPUT"
     message = "시뮬레이션 입력값이 올바르지 않습니다."
+
+
+class AuthUnavailableError(AppError):
+    status_code = 503
+    code = "AUTH_UNAVAILABLE"
+    message = "인증 서버의 공개 키를 가져오지 못했습니다. 잠시 후 다시 시도해 주세요."
+
+
+class DatabaseNotConfiguredError(AppError):
+    status_code = 503
+    code = "DB_NOT_CONFIGURED"
+    message = "데이터베이스가 연결되지 않아 저장 기능을 사용할 수 없습니다."
+
+
+class DatabaseUnavailableError(AppError):
+    status_code = 503
+    code = "DB_UNAVAILABLE"
+    message = "데이터베이스에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요."
+
+
+class NotFoundError(AppError):
+    status_code = 404
+    code = "NOT_FOUND"
+    message = "요청한 데이터를 찾을 수 없습니다."
+
+
+class MockSnapshotForbiddenError(AppError):
+    status_code = 422
+    code = "MOCK_SNAPSHOT_FORBIDDEN"
+    message = "Mock 데이터는 가상 데이터라 투자 실적 스냅샷으로 저장할 수 없습니다."
+
+
+class SnapshotIntegrityError(AppError):
+    status_code = 422
+    code = "SNAPSHOT_INTEGRITY"
+    message = "스냅샷 데이터가 일관되지 않아 저장하지 않았습니다."
+
+
+class SnapshotExistsError(AppError):
+    status_code = 409
+    code = "SNAPSHOT_EXISTS"
+    message = "같은 기준 시각의 스냅샷이 이미 저장되어 있습니다."

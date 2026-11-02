@@ -4,6 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 
 import { PnlText } from "@/components/pnl-text";
+import { SaveSimulation } from "@/components/simulator/save-simulation";
 import {
   AssumptionList,
   DecimalInput,
@@ -328,7 +329,10 @@ export function BuySimulator({
 
       <div className="min-w-0">
         {mutation.data ? (
-          <BuyResultView result={mutation.data} valuationCurrency={valuationCurrency} />
+          <div className="space-y-4">
+            <BuyResultView result={mutation.data} valuationCurrency={valuationCurrency} />
+            <SaveSimulation type="buy" input={mutation.variables} result={mutation.data} />
+          </div>
         ) : (
           <p className="rounded-xl border border-dashed p-6 text-center text-sm text-subtle">
             종목과 수량을 입력하고 계산하면 매수 전후 평균단가, 원금, 비중 변화가 여기에 표시됩니다.

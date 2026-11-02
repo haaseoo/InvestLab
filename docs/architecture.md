@@ -77,13 +77,62 @@ apps/api   FastAPI
 - 값이 하나도 없으면 합계는 0이 아니라 null입니다.
 - 역수·교차 환율을 추정하지 않습니다. 평가 통화가 섞이면 합산하지 않고 오류를 냅니다.
 
+## 인증과 데이터베이스 (Phase 3)
+
+### 토큰 검증 (`app/core/auth.py`)
+
+브라우저는 Supabase JS로 로그인하고, FastAPI 요청에 `Authorization: Bearer <access_token>`을 붙입니다. 서버는 다음을 모두 확인하고, 하나라도 어기면 401을 반환합니다.
+
+| 항목 | 기준 |
+| --- | --- |
+| 서명 | `{SUPABASE_URL}/auth/v1/.well-known/jwks.json` 공개 키. ES256·RS256만 허용하며 HS256과 `none`은 거부 |
+| kid | 헤더의 kid와 일치하는 키만 사용. 키 알고리즘과 헤더 알고리즘이 다르면 거부 |
+| exp·iat | 필수. 시계 오차 허용은 30초 |
+| iss | `{SUPABASE_URL}/auth/v1` |
+| aud·role | `authenticated` |
+| sub | UUID |
+
+공개 키 목록은 10분간 캐시합니다. 모르는 kid가 오면 다시 받아 오되, 30초 안에는 다시 받지 않아 요청 폭증에 쓰이지 않게 합니다. 키를 받지 못하면 통과시키지 않고 503(`AUTH_UNAVAILABLE`)을 반환합니다. 서명 검증 없이 디코딩만 하는 경로는 없습니다.
+
+### RLS가 적용되는 DB 접근 (`app/db/database.py`)
+
+`DATABASE_URL`의 `postgres` 역할은 RLS를 우회(BYPASSRLS)합니다. 그래서 사용자 데이터는 `user_transaction()`으로만 다룹니다.
+
+1. `request.jwt.claims`에 검증된 사용자 id를 넣습니다(`set_config(..., true)`, 트랜잭션 한정).
+2. `SET LOCAL ROLE authenticated`로 권한을 낮춥니다.
+3. Supabase의 `auth.uid()`와 RLS 정책이 브라우저에서 직접 접근할 때와 똑같이 적용됩니다.
+
+Service Role Key는 쓰지 않습니다. `postgres` 권한 그대로 실행하는 것은 마이그레이션 스크립트뿐입니다.
+
+### 테이블과 권한
+
+| 테이블 | authenticated 권한 | RLS 조건 | 비고 |
+| --- | --- | --- | --- |
+| profiles | SELECT, INSERT, UPDATE(display_name) | `auth.uid() = id` | 새 사용자 트리거가 생성 |
+| user_settings | SELECT, INSERT, UPDATE(4개 설정 열) | `auth.uid() = user_id` | 새 사용자 트리거가 생성 |
+| portfolio_snapshots | SELECT, INSERT, DELETE | 본인 + INSERT는 `source = 'live'` | `source` CHECK도 `live`만 허용. 수정 불가 |
+| holding_snapshots | SELECT, INSERT, DELETE | 본인 | 상위 스냅샷과 `(id, user_id)` 복합 외래키 |
+| ai_reports | SELECT, INSERT, DELETE | 본인 | Phase 5에서 사용 |
+| simulation_history | SELECT, INSERT, DELETE | 본인 | Mock 결과는 `is_demo = true`로 저장 |
+
+`anon`(비로그인)은 어떤 테이블에도 권한이 없습니다. 수정 권한은 열 단위로 줘서 `user_id`·`id`는 바꿀 수 없습니다.
+
+### 스냅샷 무결성
+
+- **저장 조건:** Provider가 Mock(`is_demo`)이면 거부합니다(API와 DB 제약 이중 차단). LIVE 소유자만 저장할 수 있습니다.
+- **기준 시각:** 시세 시각 중 가장 오래된 것을 `as_of`로 저장합니다. `as_of`가 없으면 저장하지 않습니다.
+- **합계 검증:** 금액은 소수 4자리로 맞춘 뒤 합산합니다. 총액이 종목 합계와 다르면 저장하지 않습니다.
+- **함께 저장하는 정보:** 통화, 환율 목록(`fx_rates`), 평가 상태, 내용 해시(SHA-256)
+- **중복 방지:** 같은 사용자·출처·기준 시각의 스냅샷은 한 번만 저장됩니다(409 `SNAPSHOT_EXISTS`).
+- **DB 제약:** `is_complete`와 평가 종목 수의 일치, 평가금액과 평가 상태의 일치, 미래 기준 시각 금지를 CHECK로 강제합니다.
+
 ## LIVE 접근 제어
 
 KIS 인증정보는 서버에 하나뿐이라 로그인만으로는 부족합니다. 다른 가입자가 소유자의 계좌를 보지 못하도록 소유자 확인까지 거칩니다. 판단할 수 없으면 거부합니다.
 
-1. 토큰 검증기 없음 → 503 `AUTH_NOT_CONFIGURED` (현재 상태)
+1. 토큰 검증기 없음(`SUPABASE_URL` 미설정) → 503 `AUTH_NOT_CONFIGURED`
 2. 토큰 없음 → 401 `AUTH_REQUIRED`
-3. 토큰 무효 → 401 `INVALID_TOKEN`
+3. 토큰 무효(서명·만료·발급자·대상·역할) → 401 `INVALID_TOKEN`
 4. 소유자 미지정 → 503 `LIVE_OWNER_NOT_CONFIGURED`
 5. 소유자 아님 → 403 `LIVE_FORBIDDEN`
 6. 통과 → KIS Provider 호출. 현재는 503 `LIVE_NOT_IMPLEMENTED`
@@ -95,7 +144,8 @@ KIS 인증정보는 서버에 하나뿐이라 로그인만으로는 부족합니
 - 비밀 값은 `SecretStr`로 보관하고 서버 밖으로 내보내지 않습니다. 상태 API는 설정 여부만 반환합니다.
 - CORS는 허용 목록의 주소, GET·POST, `Authorization`·`Content-Type`으로 제한합니다.
 - 응답에 `Cache-Control: no-store`를 붙입니다.
-- 로그 메시지에서 Bearer 토큰, 키·시크릿 쌍, 계좌번호 형식을 마스킹합니다. 예외 트레이스백 본문은 마스킹 대상이 아니므로 Phase 4에서 외부 호출 예외에 비밀 값이 실리지 않게 처리해야 합니다.
+- 로그 메시지와 예외 트레이스백에서 Bearer 토큰, JWT, DB 연결 문자열, Supabase 키, 키·시크릿 쌍, 계좌번호 형식을 마스킹합니다.
+- DB 오류 응답에는 SQL이나 원인 메시지를 싣지 않습니다(`DB_UNAVAILABLE`). SQLAlchemy는 `hide_parameters`로 파라미터를 숨깁니다.
 - 주문 API는 구현하지 않습니다.
 - 개발 서버를 외부에 공개하려면 CORS와 인증 설정을 별도로 검증해야 합니다.
 

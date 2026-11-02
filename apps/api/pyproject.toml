@@ -9,6 +9,9 @@ dependencies = [
     "pydantic>=2.9,<3",
     "pydantic-settings>=2.5,<3",
     "httpx>=0.27,<1",
+    "sqlalchemy>=2.0,<2.2",
+    "psycopg[binary]>=3.2,<4",
+    "pyjwt[crypto]>=2.9,<3",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +30,9 @@ include = ["app*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    "integration: 실제 Supabase(DB·Auth)에 접속하는 테스트. 롤백하며 데이터를 남기지 않는다",
+]
 
 [tool.ruff]
 line-length = 100
@@ -38,6 +44,8 @@ ignore = ["E501"]  # 긴 줄은 ruff format이 처리하고, 한글 문구는 �
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101", "S105", "S106"]
+# 열 목록 상수만 문자열로 조합하고, 값은 모두 바인딩 파라미터로 전달한다.
+"app/db/repositories.py" = ["S608"]
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Security"]

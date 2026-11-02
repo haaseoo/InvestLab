@@ -4,6 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 
 import { PnlText } from "@/components/pnl-text";
+import { SaveSimulation } from "@/components/simulator/save-simulation";
 import {
   AssumptionList,
   DecimalInput,
@@ -277,7 +278,10 @@ export function ScenarioSimulator({
 
       <div className="min-w-0">
         {mutation.data ? (
-          <ScenarioResultView result={mutation.data} currency={currency} />
+          <div className="space-y-4">
+            <ScenarioResultView result={mutation.data} currency={currency} />
+            <SaveSimulation type="scenario" input={mutation.variables} result={mutation.data} />
+          </div>
         ) : (
           <p className="rounded-xl border border-dashed p-6 text-center text-sm text-subtle">
             가정 변화율을 입력하고 계산하면 전체 평가자산 변화와 종목별 영향이 여기에 표시됩니다.

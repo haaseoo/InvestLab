@@ -17,6 +17,12 @@
 | POST | `/api/v1/simulations/buy` | `source=live`만 필요 | 구현 |
 | POST | `/api/v1/simulations/rebalance` | `source=live`만 필요 | 구현 |
 | POST | `/api/v1/simulations/scenario` | `source=live`만 필요 | 구현 |
+| GET | `/api/v1/me` | 필요 | 구현 |
+| GET, PUT | `/api/v1/settings` | 필요 | 구현 |
+| GET, POST | `/api/v1/snapshots` | 필요 (POST는 LIVE 소유자) | 구현 |
+| GET, DELETE | `/api/v1/snapshots/{id}` | 필요 | 구현 |
+| GET, POST | `/api/v1/simulations/history` | 필요 | 구현 |
+| DELETE | `/api/v1/simulations/history/{id}` | 필요 | 구현 |
 | POST | `/api/v1/analytics/report` | 필요 | Phase 5, 현재 404 |
 
 ## 공통
@@ -45,7 +51,13 @@
 | 422 | `INVALID_SIMULATION_INPUT` | 시뮬레이션 입력이 계산 조건에 맞지 않음(목표 합계, 모르는 항목 등) |
 | 500 | `MOCK_DATA_UNAVAILABLE` | Seed 파일을 읽지 못함 |
 | 500 | `INTERNAL_ERROR` | 예기치 못한 오류. 내부 정보는 응답에 넣지 않음 |
-| 503 | `AUTH_NOT_CONFIGURED` | 토큰 검증기 미구성. 현재 모든 LIVE 요청의 응답 |
+| 409 | `SNAPSHOT_EXISTS` | 같은 기준 시각의 스냅샷이 이미 있음 |
+| 422 | `MOCK_SNAPSHOT_FORBIDDEN` | Mock 데이터를 스냅샷으로 저장하려 함 |
+| 422 | `SNAPSHOT_INTEGRITY` | 합계 불일치, 기준 시각 없음 등으로 저장하지 않음 |
+| 503 | `AUTH_NOT_CONFIGURED` | `SUPABASE_URL` 미설정으로 토큰을 검증할 수 없음 |
+| 503 | `AUTH_UNAVAILABLE` | 인증 서버 공개 키를 가져오지 못함 |
+| 503 | `DB_NOT_CONFIGURED` | `DATABASE_URL` 미설정 |
+| 503 | `DB_UNAVAILABLE` | DB 접속·쿼리 실패. 상세 원인은 응답에 싣지 않음 |
 | 503 | `LIVE_OWNER_NOT_CONFIGURED` | `LIVE_OWNER_USER_ID` 미설정 |
 | 503 | `LIVE_NOT_IMPLEMENTED` | 인가는 통과했지만 KIS 연동 미구현 |
 
@@ -241,3 +253,33 @@ Mock 응답 예시(발췌):
 ```
 
 변화율은 -100 이상 1000 이하이며 하나 이상 지정해야 합니다. 응답에는 전체 변화(`total_before`, `total_after`, `total_change`, `total_change_pct`), 종목별 결과 `rows`(적용된 변화율과 출처), `standalone`(종목별 단독 민감도)이 있습니다.
+
+## 인증
+
+로그인이 필요한 API는 `Authorization: Bearer <Supabase access token>`을 요구합니다. 검증 기준은 [아키텍처 문서](architecture.md#토큰-검증-appcoreauthpy)에 있습니다. 모든 사용자 데이터는 RLS로 본인 것만 조회·변경됩니다.
+
+## GET /api/v1/me
+
+```json
+{ "user_id": "uuid", "email": "owner@example.com", "is_live_owner": true, "database_available": true }
+```
+
+## GET·PUT /api/v1/settings
+
+```json
+{ "theme": "light", "preferred_currency": "KRW", "preferred_source": "mock", "mask_account_numbers": true, "updated_at": "…" }
+```
+
+PUT 본문은 `updated_at`을 뺀 같은 형식입니다. `theme`은 `light`·`dark`·`system`, `preferred_source`는 `mock`·`live`만 허용합니다.
+
+## 스냅샷
+
+- `POST /api/v1/snapshots?source=live`: LIVE Provider에서 현재 보유 데이터를 받아 검증 후 저장합니다. 201과 상세를 반환합니다. `source=mock`은 422 `MOCK_SNAPSHOT_FORBIDDEN`, 소유자가 아니면 403입니다. KIS 연결 전에는 503 `LIVE_NOT_IMPLEMENTED`이며 아무것도 저장하지 않습니다.
+- `GET /api/v1/snapshots?limit=30`: 기준 시각 최신순 요약 목록
+- `GET /api/v1/snapshots/{id}`: 상세(`fx_rates`, `content_hash`, `holdings`). 본인 것이 아니면 404
+- `DELETE /api/v1/snapshots/{id}`: 204. 종목 스냅샷도 함께 삭제됩니다.
+
+## 시뮬레이션 기록
+
+- `POST /api/v1/simulations/history`: `{ "simulation_type": "buy|rebalance|scenario", "source": "mock|live", "input": {}, "result": {}, "as_of": null }`. 각 JSON은 256KB 이하입니다. `source=live` 결과는 LIVE 소유자만 저장할 수 있고, Mock 결과는 `is_demo: true`로 저장됩니다.
+- `GET /api/v1/simulations/history?limit=20`, `DELETE /api/v1/simulations/history/{id}`

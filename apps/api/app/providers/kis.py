@@ -23,9 +23,12 @@ class KISPortfolioProvider(PortfolioProvider):
     source = Source.LIVE
     is_demo = False
 
-    def __init__(self, settings: Settings, auth_available: bool = False):
+    def __init__(
+        self, settings: Settings, auth_available: bool = False, database_available: bool = False
+    ):
         self._settings = settings
         self._auth_available = auth_available
+        self._database_available = database_available
 
     async def get_holdings(self, valuation_currency: str) -> list[Holding]:
         raise LiveNotImplementedError()
@@ -56,6 +59,9 @@ class KISPortfolioProvider(PortfolioProvider):
             ),
             ProviderCheck(key="kis_account", label="KIS 계좌 설정", ok=bool(s.kis_account_no)),
             ProviderCheck(key="auth", label="사용자 인증(Supabase) 연결", ok=self._auth_available),
+            ProviderCheck(
+                key="database", label="스냅샷 저장소(DB) 연결", ok=self._database_available
+            ),
             ProviderCheck(
                 key="owner", label="LIVE 계좌 소유자 지정", ok=bool(s.live_owner_user_id)
             ),

@@ -1,6 +1,7 @@
 "use client";
 
-import { Check, Minus } from "lucide-react";
+import { Check, LogIn, Minus } from "lucide-react";
+import Link from "next/link";
 
 import { ErrorState } from "@/components/state";
 import { useProvidersStatus } from "@/hooks/use-portfolio";
@@ -53,13 +54,32 @@ export function QueryError({ error, onRetry }: { error: Error; onRetry: () => vo
 
   if (source === "live") {
     const live = status.data?.providers.find((p) => p.source === "live");
+    const code = apiError?.code ?? "";
+    const needsLogin = code === "AUTH_REQUIRED" || code === "INVALID_TOKEN";
+    const title =
+      code === "AUTH_REQUIRED"
+        ? "LIVE 데이터는 로그인이 필요합니다"
+        : code === "INVALID_TOKEN"
+          ? "로그인이 만료되었습니다"
+          : code === "LIVE_FORBIDDEN"
+            ? "이 계정은 LIVE 조회 권한이 없습니다"
+            : "실제 계좌가 연결되어 있지 않습니다";
     return (
       <ErrorState
-        title="실제 계좌가 연결되어 있지 않습니다"
+        title={title}
         description={`${apiError?.message ?? "LIVE 데이터를 조회하지 못했습니다."} 가상 데이터로 대체하지 않습니다. 시연 데이터를 보려면 상단에서 MOCK을 선택하세요.`}
         code={apiError?.code}
-        onRetry={onRetry}
+        onRetry={needsLogin ? undefined : onRetry}
       >
+        {needsLogin && (
+          <Link
+            href="/login"
+            className="inline-flex h-11 items-center gap-1.5 rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground hover:bg-primary/85"
+          >
+            <LogIn className="size-4" aria-hidden="true" />
+            로그인
+          </Link>
+        )}
         {live && live.checks.length > 0 && (
           <div className="w-full max-w-sm rounded-xl bg-secondary/60 p-4">
             <h3 className="mb-3 text-left text-sm font-semibold">LIVE 연결 준비 상태</h3>
