@@ -256,3 +256,149 @@ class TestMasking:
     def test_settings_repr_hides_secrets(self):
         settings = make_settings(kis_app_secret="TOPSECRET")
         assert "TOPSECRET" not in repr(settings)
+
+
+class TestRiskApi:
+    def test_meta_and_source(self, client):
+        body = client.get("/api/v1/analytics/risk").json()
+        assert body["source"] == "mock"
+        assert body["is_demo"] is True
+        assert body["as_of"] and body["retrieved_at"]
+
+    def test_sector_matches_independent_calculation(self, client):
+        seed = json.loads((REPO_ROOT / "data/mock/portfolio.json").read_text(encoding="utf-8"))
+        fx = D(seed["fx_rates"][0]["rate"])
+        values = {
+            h["symbol"]: D(h["quantity"])
+            * D(h["current_price"])
+            * (fx if h["currency"] == "USD" else 1)
+            for h in seed["holdings"]
+        }
+        total = sum(values.values())
+        semis = sum(values[h["symbol"]] for h in seed["holdings"] if h["sector"] == "반도체")
+        slices = client.get("/api/v1/analytics/risk").json()["allocations"]["sector"]
+        semi = next(s for s in slices if s["key"] == "반도체")
+        assert abs(D(semi["weight_pct"]) - semis / total * 100) < D("0.0001")
+        assert slices[-1]["is_unclassified"] is True
+
+    def test_mock_has_no_etf_constituent_data(self, client):
+        overlap = client.get("/api/v1/analytics/risk").json()["overlap"]
+        assert overlap["constituent_overlap"]["status"] == "unavailable"
+        assert overlap["constituent_overlap"]["overlaps"] == []
+        benchmarks = {g["benchmark"]: g for g in overlap["benchmark_groups"]}
+        assert {h["symbol"] for h in benchmarks["S&P 500"]["holdings"]} == {"VOO", "360750"}
+        assert {h["symbol"] for h in benchmarks["NASDAQ-100"]["holdings"]} == {"QQQ", "133690"}
+
+    def test_history_based_metrics_not_computed(self, client):
+        body = client.get("/api/v1/analytics/risk").json()
+        keys = {m["key"] for m in body["unavailable_metrics"]}
+        assert {"volatility", "max_drawdown", "sharpe_ratio"} <= keys
+        assert "volatility" not in body["concentration"]
+
+    def test_allocation_new_dimensions(self, client):
+        for dimension in ["exposure_country", "sector"]:
+            body = client.get(
+                "/api/v1/analytics/allocation", params={"dimension": dimension}
+            ).json()
+            assert abs(sum(D(s["weight_pct"]) for s in body["slices"]) - 100) < D("0.01")
+
+    def test_etf_compositions_file_is_used_when_present(self, tmp_path):
+        import shutil
+
+        for name in ["portfolio.json", "history.json"]:
+            shutil.copy(REPO_ROOT / "data/mock" / name, tmp_path / name)
+        (tmp_path / "etf_compositions.json").write_text(
+            json.dumps(
+                {
+                    "compositions": [
+                        {
+                            "etf_symbol": "SOXX",
+                            "etf_market": "NASDAQ",
+                            "as_of": "2026-10-30T00:00:00+00:00",
+                            "provider": "테스트",
+                            "constituents": [
+                                {
+                                    "symbol": "NVDA",
+                                    "market": "NASDAQ",
+                                    "name": "NVIDIA",
+                                    "weight_pct": "10",
+                                }
+                            ],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        c = TestClient(create_app(make_settings(mock_data_dir=tmp_path)))
+        constituent = c.get("/api/v1/analytics/risk").json()["overlap"]["constituent_overlap"]
+        assert constituent["status"] == "partial"
+        assert constituent["overlaps"][0]["symbol"] == "NVDA"
+
+
+BUY = {"symbol": "005930", "market": "KRX", "mode": "quantity", "quantity": "10", "price": "80000"}
+
+
+class TestSimulationApi:
+    def test_buy(self, client):
+        body = client.post("/api/v1/simulations/buy", json=BUY).json()
+        assert body["source"] == "mock" and body["is_theoretical"] is True
+        assert body["after"]["quantity"] == "130"
+        assert body["after"]["cost_basis"] == "9344000.00"
+        assert body["after"]["average_cost"] == "71876.92"  # 9,344,000 / 130
+
+    def test_buy_validation_error_has_reason(self, client):
+        response = client.post("/api/v1/simulations/buy", json={**BUY, "quantity": None})
+        assert response.status_code == 422
+        assert any("quantity" in r for r in response.json()["error"]["details"]["reasons"])
+
+    def test_buy_unknown_holding(self, client):
+        response = client.post("/api/v1/simulations/buy", json={**BUY, "symbol": "NOPE"})
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "HOLDING_NOT_FOUND"
+
+    def test_rebalance_keeps_total(self, client):
+        holdings = client.get("/api/v1/portfolio/holdings").json()["holdings"]
+        targets = [{"key": f"{h['market']}:{h['symbol']}", "target_pct": "10"} for h in holdings]
+        body = client.post(
+            "/api/v1/simulations/rebalance", json={"dimension": "holding", "targets": targets}
+        ).json()
+        assert abs(sum(D(r["adjustment_value"]) for r in body["rows"])) < D("0.1")
+
+    def test_rebalance_bad_sum(self, client):
+        response = client.post(
+            "/api/v1/simulations/rebalance",
+            json={"dimension": "asset_class", "targets": [{"key": "other", "target_pct": "50"}]},
+        )
+        assert response.status_code == 422
+        assert response.json()["error"]["code"] == "INVALID_SIMULATION_INPUT"
+
+    def test_scenario(self, client):
+        body = client.post(
+            "/api/v1/simulations/scenario",
+            json={"shocks": [{"type": "asset_class", "key": "sector_etf", "change_pct": "-100"}]},
+        ).json()
+        soxx = next(r for r in body["rows"] if r["symbol"] == "SOXX")
+        assert D(body["total_change"]) == -D(soxx["value_before"])
+
+    @pytest.mark.parametrize(
+        ("path", "payload"),
+        [
+            ("/api/v1/analytics/risk", None),
+            ("/api/v1/simulations/buy", BUY),
+            (
+                "/api/v1/simulations/rebalance",
+                {"dimension": "holding", "targets": [{"key": "a", "target_pct": "100"}]},
+            ),
+            ("/api/v1/simulations/scenario", {"standalone_change_pct": "-10"}),
+        ],
+    )
+    def test_live_blocked(self, client, live_client, path, payload):
+        send = (
+            (lambda c, **kw: c.get(path, **kw))
+            if payload is None
+            else (lambda c, **kw: c.post(path, json=payload, **kw))
+        )
+        assert send(client, params={"source": "live"}).status_code == 503
+        response = send(live_client, params={"source": "live"}, headers=bearer("owner-token"))
+        assert response.json()["error"]["code"] == "LIVE_NOT_IMPLEMENTED"

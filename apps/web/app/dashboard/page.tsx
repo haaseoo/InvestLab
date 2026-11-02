@@ -6,28 +6,96 @@ import { AIInsightCard } from "@/components/ai-insight-card";
 import { AssetAllocationChart } from "@/components/asset-allocation-chart";
 import { Card, DemoBadge } from "@/components/card";
 import { Assumptions, DataProvenanceBar } from "@/components/data-provenance";
+import { EmptyState } from "@/components/empty-state";
 import { HoldingValueBars } from "@/components/holding-value-bars";
 import { PnlText } from "@/components/pnl-text";
 import { PortfolioChart } from "@/components/portfolio-chart";
 import { QueryError } from "@/components/query-error";
 import { StatCard } from "@/components/stat-card";
-import { EmptyState } from "@/components/empty-state";
 import { LoadingSkeleton } from "@/components/state";
-import { useHistory, usePortfolio } from "@/hooks/use-portfolio";
+import { useHistory, usePortfolio, useRisk } from "@/hooks/use-portfolio";
 import {
   directionOf,
   formatKrwCompact,
   formatMoney,
+  formatPercent,
   formatSignedMoney,
   formatSignedPercent,
 } from "@/lib/format";
-import type { History } from "@/types/portfolio";
+import type { History, PortfolioSummary } from "@/types/portfolio";
+import type { AllocationSlice } from "@/types/portfolio";
 
 function pnlWord(value: string | null) {
   const direction = directionOf(value);
   if (direction === "up") return "평가이익";
   if (direction === "down") return "평가손실";
   return direction === "flat" ? "손익 없음" : "계산 불가";
+}
+
+const CURRENCY_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)"];
+
+/** 총 평가자산. 숫자 옆에 거래 통화 구성(분석 엔진 계산값)을 함께 둬 가로 공간을 쓴다. */
+function TotalAssetCard({
+  summary,
+  currencySlices,
+}: {
+  summary: PortfolioSummary;
+  currencySlices: AllocationSlice[] | undefined;
+}) {
+  const currency = summary.valuation_currency;
+  return (
+    <section className="flex flex-col gap-4 card-surface p-5 md:flex-row md:items-center md:justify-between md:gap-8 md:p-6">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="grid size-8 place-items-center rounded-full bg-secondary">
+            <Wallet className="size-4 text-faint" aria-hidden="true" />
+          </span>
+          <h2 className="text-[15px] font-medium text-subtle">총 평가자산</h2>
+        </div>
+        <p className="mt-2 text-[28px] leading-tight font-bold num tracking-tight md:text-[34px]">
+          {formatMoney(summary.total_market_value, currency)}
+        </p>
+        <p className="mt-1 text-[13px] text-subtle">
+          {currency} 환산 · 예수금 제외 ·{" "}
+          <PnlText
+            value={summary.total_unrealized_pnl_pct}
+            text={formatSignedPercent(summary.total_unrealized_pnl_pct)}
+            className="font-semibold"
+          />
+        </p>
+      </div>
+
+      {currencySlices && currencySlices.length > 0 && (
+        <div className="w-full md:max-w-sm">
+          <h3 className="mb-2 text-[13px] text-subtle">거래 통화 구성</h3>
+          <div className="flex h-2 gap-0.5 overflow-hidden rounded-full">
+            {currencySlices.map((slice, i) => (
+              <div
+                key={slice.key}
+                style={{
+                  width: `${Number(slice.weight_pct)}%`,
+                  background: CURRENCY_COLORS[i % CURRENCY_COLORS.length],
+                }}
+              />
+            ))}
+          </div>
+          <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[13px]">
+            {currencySlices.map((slice, i) => (
+              <li key={slice.key} className="flex items-center gap-1.5">
+                <span
+                  className="size-2 rounded-full"
+                  style={{ background: CURRENCY_COLORS[i % CURRENCY_COLORS.length] }}
+                  aria-hidden="true"
+                />
+                <span className="text-subtle">{slice.label}</span>
+                <span className="font-semibold num">{formatPercent(slice.weight_pct)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
 }
 
 function HistoryCard({
@@ -72,6 +140,7 @@ function HistoryCard({
 export default function DashboardPage() {
   const portfolio = usePortfolio();
   const history = useHistory();
+  const risk = useRisk();
 
   if (portfolio.isPending) return <LoadingSkeleton />;
   if (portfolio.isError) {
@@ -86,18 +155,9 @@ export default function DashboardPage() {
     <div>
       <DataProvenanceBar portfolio={data} isFetching={portfolio.isFetching} />
 
-      <div className="grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 md:gap-4 lg:grid-cols-[1.3fr_1fr_1fr]">
-        <StatCard
-          label="총 평가자산"
-          icon={Wallet}
-          value={
-            <span className="text-[26px] md:text-[28px] lg:text-[32px] xl:text-[38px]">
-              {formatMoney(summary.total_market_value, currency)}
-            </span>
-          }
-          hint={`${currency} 환산 · 예수금 제외`}
-          className="justify-between min-[360px]:col-span-2 lg:col-span-1 lg:row-span-2"
-        />
+      <TotalAssetCard summary={summary} currencySlices={risk.data?.allocations.currency} />
+
+      <div className="mt-3 grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 md:mt-4 md:gap-4 xl:grid-cols-4">
         <StatCard
           label="총 투자 원금"
           icon={Coins}
@@ -168,7 +228,13 @@ export default function DashboardPage() {
             <EmptyState title="보유 종목이 없습니다" />
           )}
         </Card>
-        <AIInsightCard />
+        <AIInsightCard
+          insights={risk.data?.insights}
+          isLoading={risk.isPending}
+          isError={risk.isError}
+          limit={4}
+          showLink
+        />
       </div>
 
       <Assumptions items={data.assumptions} />

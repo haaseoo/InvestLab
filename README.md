@@ -2,7 +2,7 @@
 
 주식·ETF 보유 자산을 분석하는 개인 투자 포트폴리오 웹서비스입니다. 조회 전용이며 매수·매도 주문이나 자동매매 기능은 없습니다. 투자 자문이 아닙니다.
 
-현재 상태는 **Phase 1**입니다. Mock 데이터로 전체 흐름이 동작하며, 실제 계좌·Supabase·AI는 아직 연결되어 있지 않습니다.
+현재 상태는 **Phase 2**입니다. Mock 데이터로 전체 흐름과 분석 엔진, 시뮬레이터가 동작하며, 실제 계좌·Supabase·AI는 아직 연결되어 있지 않습니다.
 
 ## 기술 스택
 
@@ -37,6 +37,7 @@ npm run dev
 
 - `data/mock/portfolio.json`: 보유 종목, 가상 시세, 가상 환율
 - `data/mock/history.json`: 가상 자산 이력. `portfolio.json`을 고치면 `apps/api`에서 `.venv/bin/python scripts/generate_mock_history.py`로 다시 생성합니다.
+- `data/mock/etf_compositions.json`(선택): ETF 구성 종목. **기본으로 포함하지 않습니다.** 실제 출처에서 확인한 데이터가 있을 때만 넣으면 구성 종목 중복 분석이 계산됩니다. 형식은 [API 명세](docs/api-spec.md#etf-구성-종목-파일)를 참고하세요.
 
 ## LIVE 모드
 
@@ -69,23 +70,24 @@ cd apps/web && npx tsc --noEmit && npm run lint && npx prettier --check . && npm
 
 ## 현재 구현 기능
 
-- 대시보드: 총 평가자산, 원금, 평가손익, 수익률, 종목 수, 자산 구성, 종목별 평가금액, 가상 이력 차트, 기준·조회 시각
+- 대시보드: 총 평가자산과 거래 통화 구성, 원금·손익·수익률·종목 수, 자산 구성, 종목별 평가금액, 가상 이력 차트, 분석 엔진 인사이트(AI 아님), 기준·조회 시각
 - 보유 종목: 검색, 정렬, 원화 환산/거래 통화 전환, 모바일 카드 보기
-- 분석: 상위 종목 집중도, 자산군별 비중만 제공
+- 분석: 상위 1·3·5 종목 집중도, HHI·유효 종목 수, 자산군·투자 대상 국가·섹터·거래 통화 비중, 동일 지수 추종 ETF, ETF 구성 종목 중복(데이터가 있을 때만), 계산하지 않은 지표와 사유
+- 시뮬레이터: 추가 매수 평균단가, 목표 비중 리밸런싱, 하락 시나리오와 종목별 민감도
 - 설정: 데이터 모드, KIS 연결 준비 상태만 제공
-- API: `/health`, `/providers/status`, `/portfolio`, `/portfolio/holdings`, `/portfolio/summary`, `/portfolio/history`, `/analytics/allocation`
+- API: `/health`, `/providers/status`, `/portfolio`, `/portfolio/holdings`, `/portfolio/summary`, `/portfolio/history`, `/analytics/allocation`, `/analytics/risk`, `/simulations/buy`, `/simulations/rebalance`, `/simulations/scenario`
 - 시세·환율 누락 처리, LIVE 접근 차단, CORS 제한, 로그 마스킹
 
-AI 리포트와 시뮬레이터 화면은 안내 문구만 표시합니다.
+AI 리포트 화면은 안내 문구만 표시합니다. 시뮬레이션 결과는 저장하지 않습니다(저장은 Phase 3).
 
 ## 향후 개발 계획
 
 | Phase | 내용 |
 | --- | --- |
-| 2 | 국가·섹터 분석, ETF 중복 데이터 구조, 추가 매수·리밸런싱·하락 시나리오 계산 |
+| 2 | 완료: 분석 엔진과 시뮬레이터 |
 | 3 | Supabase 인증, 테이블, RLS, 사용자별 저장, 포트폴리오 스냅샷 |
 | 4 | KIS 토큰 관리, 국내·해외 잔고와 시세, 읽기 전용 실계좌 연동 |
-| 5 | OpenAI 리포트, 시뮬레이터 UI, 접근성·성능 개선, 배포 준비 |
+| 5 | OpenAI 리포트, 접근성·성능 개선, 배포 준비 |
 
 ## 문서
 

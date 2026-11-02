@@ -1,7 +1,13 @@
 {
   "meta": {
     "as_of": "2026-10-30T15:30:00+09:00",
-    "notice": "모든 수량·단가·환율은 시연용 가상 값이며 실제 시세나 계좌 정보가 아닙니다."
+    "notice": "모든 수량·단가·환율은 시연용 가상 값이며 실제 시세나 계좌 정보가 아닙니다.",
+    "field_notes": {
+      "country": "상장 국가",
+      "exposure_country": "투자 대상 국가. 원자재 등 국가로 나눌 수 없으면 null",
+      "sector": "개별 종목·섹터 ETF의 섹터. 여러 섹터에 걸친 지수 ETF는 구성 종목 데이터 없이 나눌 수 없으므로 null",
+      "benchmark": "ETF 추종 지수. 확인되지 않으면 null"
+    }
   },
   "fx_rates": [
     {
@@ -23,7 +29,9 @@
       "current_price": "618.40",
       "currency": "USD",
       "country": "US",
-      "sector": null
+      "exposure_country": "US",
+      "sector": null,
+      "benchmark": "S&P 500"
     },
     {
       "symbol": "QQQ",
@@ -36,7 +44,9 @@
       "current_price": "592.10",
       "currency": "USD",
       "country": "US",
-      "sector": null
+      "exposure_country": "US",
+      "sector": null,
+      "benchmark": "NASDAQ-100"
     },
     {
       "symbol": "SOXX",
@@ -49,7 +59,9 @@
       "current_price": "298.65",
       "currency": "USD",
       "country": "US",
-      "sector": "반도체"
+      "exposure_country": "US",
+      "sector": "반도체",
+      "benchmark": null
     },
     {
       "symbol": "NVDA",
@@ -62,7 +74,9 @@
       "current_price": "196.20",
       "currency": "USD",
       "country": "US",
-      "sector": "반도체"
+      "exposure_country": "US",
+      "sector": "반도체",
+      "benchmark": null
     },
     {
       "symbol": "TSLA",
@@ -75,7 +89,9 @@
       "current_price": "301.55",
       "currency": "USD",
       "country": "US",
-      "sector": "자동차"
+      "exposure_country": "US",
+      "sector": "자동차",
+      "benchmark": null
     },
     {
       "symbol": "005930",
@@ -88,7 +104,9 @@
       "current_price": "84300",
       "currency": "KRW",
       "country": "KR",
-      "sector": "반도체"
+      "exposure_country": "KR",
+      "sector": "반도체",
+      "benchmark": null
     },
     {
       "symbol": "035720",
@@ -101,7 +119,9 @@
       "current_price": "41250",
       "currency": "KRW",
       "country": "KR",
-      "sector": "인터넷"
+      "exposure_country": "KR",
+      "sector": "인터넷",
+      "benchmark": null
     },
     {
       "symbol": "360750",
@@ -114,7 +134,9 @@
       "current_price": "23180",
       "currency": "KRW",
       "country": "KR",
-      "sector": null
+      "exposure_country": "US",
+      "sector": null,
+      "benchmark": "S&P 500"
     },
     {
       "symbol": "133690",
@@ -127,7 +149,9 @@
       "current_price": "146250",
       "currency": "KRW",
       "country": "KR",
-      "sector": null
+      "exposure_country": "US",
+      "sector": null,
+      "benchmark": "NASDAQ-100"
     },
     {
       "symbol": "411060",
@@ -140,7 +164,9 @@
       "current_price": "24960",
       "currency": "KRW",
       "country": "KR",
-      "sector": "금"
+      "exposure_country": null,
+      "sector": null,
+      "benchmark": null
     }
   ]
 }

@@ -54,3 +54,15 @@ class MockDataError(AppError):
     status_code = 500
     code = "MOCK_DATA_UNAVAILABLE"
     message = "Mock 데이터를 읽을 수 없습니다."
+
+
+class HoldingNotFoundError(AppError):
+    status_code = 404
+    code = "HOLDING_NOT_FOUND"
+    message = "보유 종목에서 찾을 수 없습니다."
+
+
+class SimulationInputError(AppError):
+    status_code = 422
+    code = "INVALID_SIMULATION_INPUT"
+    message = "시뮬레이션 입력값이 올바르지 않습니다."

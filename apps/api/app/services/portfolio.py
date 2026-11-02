@@ -20,7 +20,9 @@ from app.services.analytics import (
 )
 
 
-def _meta(provider: PortfolioProvider, holdings: list[Holding], valuation_currency: str) -> dict:
+def build_meta(
+    provider: PortfolioProvider, holdings: list[Holding], valuation_currency: str
+) -> dict:
     # 가장 오래된 시세 시각을 기준 시점으로 삼는다. 전체가 그 시각 이후의 값이라는 뜻이다.
     timestamps = [h.as_of for h in holdings if h.as_of is not None]
     return ResponseMeta(
@@ -38,13 +40,13 @@ async def _weighted_holdings(provider: PortfolioProvider, currency: str) -> list
 
 async def get_holdings(provider: PortfolioProvider, currency: str) -> HoldingsResponse:
     holdings = await _weighted_holdings(provider, currency)
-    return HoldingsResponse(**_meta(provider, holdings, currency), holdings=holdings)
+    return HoldingsResponse(**build_meta(provider, holdings, currency), holdings=holdings)
 
 
 async def get_summary(provider: PortfolioProvider, currency: str) -> SummaryResponse:
     holdings = await _weighted_holdings(provider, currency)
     return SummaryResponse(
-        **_meta(provider, holdings, currency),
+        **build_meta(provider, holdings, currency),
         summary=compute_summary(holdings, currency),
         concentration=compute_concentration(holdings),
         assumptions=ASSUMPTIONS,
@@ -56,7 +58,7 @@ async def get_allocation(
 ) -> AllocationResponse:
     holdings = await _weighted_holdings(provider, currency)
     return AllocationResponse(
-        **_meta(provider, holdings, currency),
+        **build_meta(provider, holdings, currency),
         dimension=dimension,
         slices=compute_allocation(holdings, dimension),
         excluded_symbols=[h.symbol for h in holdings if h.market_value_valuation is None],
@@ -66,7 +68,7 @@ async def get_allocation(
 async def get_portfolio(provider: PortfolioProvider, currency: str) -> PortfolioResponse:
     holdings = await _weighted_holdings(provider, currency)
     return PortfolioResponse(
-        **_meta(provider, holdings, currency),
+        **build_meta(provider, holdings, currency),
         summary=compute_summary(holdings, currency),
         concentration=compute_concentration(holdings),
         assumptions=ASSUMPTIONS,

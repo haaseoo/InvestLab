@@ -73,11 +73,11 @@
   --down: #1b5fc9;
 
   /* 범주형 차트. 값을 바꾸면 docs/design-system.md의 팔레트 검증을 다시 수행한다. */
-  --chart-1: #348ff5;
-  --chart-2: #8048f8;
-  --chart-3: #14917b;
-  --chart-4: #c98a1e;
-  --chart-5: #c2559a;
+  --chart-1: #348ff5; /* 블루 */
+  --chart-2: #f0647c; /* 코랄 */
+  --chart-3: #8048f8; /* 퍼플 */
+  --chart-4: #1fa3b8; /* 시안 */
+  --chart-5: #e3a14a; /* 피치 */
 }
 
 @layer base {

@@ -57,7 +57,8 @@ async def allocation(
     provider: ProviderDep,
     settings: SettingsDep,
     dimension: Annotated[
-        Literal["asset_class", "asset_type", "market", "currency"], Query()
+        Literal["asset_class", "asset_type", "market", "currency", "exposure_country", "sector"],
+        Query(),
     ] = "asset_class",
 ) -> AllocationResponse:
     return await service.get_allocation(provider, settings.valuation_currency, dimension)

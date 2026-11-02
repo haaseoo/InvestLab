@@ -9,8 +9,12 @@ export interface Holding {
   asset_type: "stock" | "etf" | "other";
   asset_class: string;
   name: string;
+  /** 상장 국가 */
   country: string | null;
+  /** 투자 대상 국가 */
+  exposure_country: string | null;
   sector: string | null;
+  benchmark: string | null;
   quantity: DecimalString;
   average_cost: DecimalString;
   current_price: DecimalString | null;
@@ -51,12 +55,18 @@ export interface AllocationSlice {
   market_value: DecimalString;
   weight_pct: DecimalString;
   holding_count: number;
+  /** 분류 정보가 없는 종목 묶음. 실제 분류가 아니다. */
+  is_unclassified: boolean;
+  symbols: string[];
 }
 
 export interface Concentration {
   top1_pct: DecimalString | null;
   top3_pct: DecimalString | null;
   top5_pct: DecimalString | null;
+  /** 허핀달-허쉬만 지수, 0~10000 */
+  hhi: DecimalString | null;
+  effective_holdings: DecimalString | null;
 }
 
 export interface FxRate {

@@ -10,6 +10,7 @@ from pydantic import BaseModel, ValidationError
 
 from app.core.errors import MockDataError
 from app.providers.base import PortfolioProvider
+from app.schemas.analysis import EtfComposition
 from app.schemas.portfolio import (
     AccountSummary,
     FxRate,
@@ -21,6 +22,8 @@ from app.schemas.portfolio import (
     Source,
 )
 from app.services.valuation import build_holding
+
+ETF_COMPOSITIONS_FILE = "etf_compositions.json"
 
 
 class _SeedHolding(Position):
@@ -116,6 +119,19 @@ class MockPortfolioProvider(PortfolioProvider):
             return [SnapshotPoint.model_validate(p) for p in raw["points"]]
         except (KeyError, ValidationError) as exc:
             raise MockDataError(details={"file": "history.json"}) from exc
+
+    async def get_etf_compositions(self) -> list[EtfComposition]:
+        """data/mock/etf_compositions.json이 있을 때만 읽는다.
+
+        기본 Mock 데이터에는 이 파일이 없다. 실제 구성 종목을 확인하지 않은 값을 만들지 않기 위해서다.
+        """
+        if not (self._data_dir / ETF_COMPOSITIONS_FILE).exists():
+            return []
+        raw = self._read(ETF_COMPOSITIONS_FILE)
+        try:
+            return [EtfComposition.model_validate(c) for c in raw["compositions"]]
+        except (KeyError, ValidationError) as exc:
+            raise MockDataError(details={"file": ETF_COMPOSITIONS_FILE}) from exc
 
     def get_provider_status(self) -> ProviderStatus:
         return ProviderStatus(

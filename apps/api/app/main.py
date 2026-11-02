@@ -10,7 +10,7 @@ from app.core.errors import AppError
 from app.core.logging import install_log_masking
 from app.providers.kis import KISPortfolioProvider
 from app.providers.mock import MockPortfolioProvider
-from app.routers import portfolio
+from app.routers import analytics, portfolio, simulations
 from app.schemas.portfolio import Source
 
 logger = logging.getLogger("investlab")
@@ -56,8 +56,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation(_: Request, exc: RequestValidationError) -> JSONResponse:
-        fields = [".".join(str(p) for p in e["loc"]) for e in exc.errors()]
-        return _error(422, "VALIDATION_ERROR", "요청 값이 올바르지 않습니다.", {"fields": fields})
+        errors = exc.errors()
+        fields = [".".join(str(p) for p in e["loc"]) for e in errors]
+        # 입력값 자체는 응답에 다시 싣지 않는다. 항목과 사유만 돌려준다.
+        reasons = [str(e["msg"]).removeprefix("Value error, ") for e in errors]
+        return _error(
+            422,
+            "VALIDATION_ERROR",
+            "요청 값이 올바르지 않습니다.",
+            {"fields": fields, "reasons": reasons},
+        )
 
     @app.exception_handler(Exception)
     async def handle_unexpected(_: Request, exc: Exception) -> JSONResponse:
@@ -69,6 +77,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"status": "ok"}
 
     app.include_router(portfolio.router)
+    app.include_router(analytics.router)
+    app.include_router(simulations.router)
     return app
 
 

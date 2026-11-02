@@ -65,8 +65,13 @@ class Position(BaseModel):
     quantity: Decimal = Field(ge=0)
     average_cost: Decimal = Field(ge=0)
     currency: CurrencyCode
+    # 상장 국가
     country: str | None = None
+    # 투자 대상 국가. 해외 지수를 추종하는 국내 상장 ETF는 country와 다르다.
+    exposure_country: str | None = None
     sector: str | None = None
+    # ETF 추종 지수. 동일 지수 추종 여부 판단에만 쓴다.
+    benchmark: str | None = None
 
 
 class Quote(BaseModel):
@@ -94,7 +99,9 @@ class Holding(BaseModel):
     asset_class: AssetClass
     name: str
     country: str | None
+    exposure_country: str | None
     sector: str | None
+    benchmark: str | None
 
     quantity: Exact
     average_cost: Exact
@@ -142,14 +149,21 @@ class AllocationSlice(BaseModel):
     market_value: Money
     weight_pct: Percent
     holding_count: int
+    # 분류 정보가 없는 종목을 모은 묶음. 실제 분류가 아니다.
+    is_unclassified: bool = False
+    symbols: list[str] = []
 
 
 class Concentration(BaseModel):
-    """상위 N개 종목의 평가 비중 합. 평가 가능한 종목이 없으면 모두 None."""
+    """종목 집중도. 평가 가능한 종목이 없으면 모두 None."""
 
     top1_pct: Percent | None
     top3_pct: Percent | None
     top5_pct: Percent | None
+    # 허핀달-허쉬만 지수(0~10000). Σ(비중%)²
+    hhi: Percent | None = None
+    # 유효 종목 수 = 10000 ÷ HHI. 같은 비중으로 나눠 가진 것과 같은 종목 수
+    effective_holdings: Percent | None = None
 
 
 class AccountSummary(BaseModel):

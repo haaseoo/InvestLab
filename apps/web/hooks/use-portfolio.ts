@@ -28,3 +28,11 @@ export function useProvidersStatus() {
     queryFn: ({ signal }) => api.providersStatus(signal),
   });
 }
+
+export function useRisk() {
+  const { source } = useSource();
+  return useQuery({
+    queryKey: ["risk", source],
+    queryFn: ({ signal }) => api.risk(source, signal),
+  });
+}

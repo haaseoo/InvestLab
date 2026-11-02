@@ -30,20 +30,21 @@
 
 ## 차트
 
-색은 순위가 아니라 자산군에 고정합니다(`lib/chart.ts`).
+블루·코랄·퍼플을 중심으로, 보조로 시안과 피치를 씁니다. 색은 순위가 아니라 자산군에 고정합니다(`lib/chart.ts`).
 
 | 순서 | 값 | 자산군 |
 | --- | --- | --- |
-| 1 | `#348FF5` | 시장지수 ETF |
-| 2 | `#8048F8` | 섹터·테마 ETF |
-| 3 | `#14917B` | 국내 개별주 |
-| 4 | `#C98A1E` | 해외 개별주 |
-| 5 | `#C2559A` | 기타 자산 |
+| 1 | `#348FF5` 블루 | 시장지수 ETF |
+| 2 | `#F0647C` 코랄 | 국내 개별주 |
+| 3 | `#8048F8` 퍼플 | 해외 개별주 |
+| 4 | `#1FA3B8` 시안 | 섹터·테마 ETF |
+| 5 | `#E3A14A` 피치 | 기타 자산 |
 
-검증 결과(밝은 배경): 명도·채도·정상 시각 구분은 통과했습니다. 경고가 2개 있어 다음과 같이 보완합니다.
+검증 결과(밝은 배경): 명도, 채도, 색각 이상 구분(인접 최저 ΔE 16.5), 정상 시각 구분을 모두 통과했습니다. 코랄·시안·피치는 배경 대비가 3:1 미만이라 범례에 이름과 수치를 글자로 함께 표시합니다. 블루와 퍼플은 서로 비슷해 순서상 이웃하지 않게 사이에 코랄을 두었습니다.
 
-- 파랑↔보라의 색각 이상 구분값이 7.6으로 권장치 8보다 약간 낮음: 조각 사이 2px 간격과 범례 수치로 보완
-- 해외 개별주 색의 배경 대비가 2.87로 3:1 미만: 범례에 이름과 수치를 글자로 표시
+차트 코랄 `#F0647C`는 상승 색 `#D92D3A`보다 밝은 장식용 색입니다. 상승·하락은 언제나 기호와 부호로도 표시하므로 차트 색과 혼동되지 않습니다.
+
+분류 정보가 없는 묶음(섹터 정보 없음 등)은 회색 빗금 막대로 표시해 실제 분류와 구분합니다.
 
 차트 규칙은 2px 선, 2px 조각 간격, 옅은 격자, 축 하나입니다. 글자는 차트 색이 아닌 텍스트 토큰을 씁니다.
 
@@ -78,7 +79,9 @@ Pretendard Variable v1.3.9(OFL-1.1)를 `next/font/local`로 직접 호스팅합�
 | AssetAllocationChart | `components/asset-allocation-chart.tsx` |
 | HoldingsTable | `components/holdings-table.tsx` |
 | RiskIndicator | `components/risk-indicator.tsx` |
-| AIInsightCard | `components/ai-insight-card.tsx` |
+| AIInsightCard (포트폴리오 인사이트) | `components/ai-insight-card.tsx` |
+| AllocationBars | `components/allocation-bars.tsx` |
+| 시뮬레이터 | `components/simulator/` |
 | SourceModeSwitcher | `components/source-mode-switcher.tsx` |
 | EmptyState | `components/empty-state.tsx` |
 | ErrorState, LoadingSkeleton | `components/state.tsx` |
@@ -87,3 +90,7 @@ Pretendard Variable v1.3.9(OFL-1.1)를 `next/font/local`로 직접 호스팅합�
 ## EasyUI 검토
 
 [EasyUI](https://easyui.site/components)는 MIT 라이선스이며 애니메이션에 `framer-motion`을 사용합니다. 스펙의 "유지보수가 어려운 불필요한 애니메이션 지양"에 따라 코드와 의존성은 가져오지 않았고, 라벨·값·보조 설명으로 구성하는 Stat Card 방식만 참고했습니다.
+
+## 인사이트 카드
+
+카드 제목은 "포트폴리오 인사이트"이며 "분석 엔진 계산" 배지를 붙입니다. 문장은 분석 엔진이 계산한 수치를 옮긴 것이고 판단·권유·예측 표현을 쓰지 않습니다. 카드 아래에 "AI 해석 준비 중" 상태를 항상 표시해 AI 분석이 실행된 것처럼 보이지 않게 합니다.

@@ -6,6 +6,7 @@
 from app.core.config import Settings
 from app.core.errors import LiveNotImplementedError
 from app.providers.base import PortfolioProvider
+from app.schemas.analysis import EtfComposition
 from app.schemas.portfolio import (
     AccountSummary,
     FxRate,
@@ -39,6 +40,10 @@ class KISPortfolioProvider(PortfolioProvider):
         raise LiveNotImplementedError()
 
     async def get_history(self) -> list[SnapshotPoint]:
+        raise LiveNotImplementedError()
+
+    async def get_etf_compositions(self) -> list[EtfComposition]:
+        # KIS가 ETF 구성 종목을 제공하는지는 Phase 4에서 공식 문서로 확인한다.
         raise LiveNotImplementedError()
 
     def get_provider_status(self) -> ProviderStatus:

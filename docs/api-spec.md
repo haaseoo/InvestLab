@@ -13,9 +13,10 @@
 | GET | `/api/v1/portfolio/summary` | `source=live`만 필요 | 구현 |
 | GET | `/api/v1/portfolio/history` | `source=live`만 필요 | 구현 |
 | GET | `/api/v1/analytics/allocation` | `source=live`만 필요 | 구현 |
-| GET | `/api/v1/analytics/risk` | 미정 | Phase 2, 현재 404 |
-| POST | `/api/v1/simulations/buy` | 미정 | Phase 2, 현재 404 |
-| POST | `/api/v1/simulations/rebalance` | 미정 | Phase 2, 현재 404 |
+| GET | `/api/v1/analytics/risk` | `source=live`만 필요 | 구현 |
+| POST | `/api/v1/simulations/buy` | `source=live`만 필요 | 구현 |
+| POST | `/api/v1/simulations/rebalance` | `source=live`만 필요 | 구현 |
+| POST | `/api/v1/simulations/scenario` | `source=live`만 필요 | 구현 |
 | POST | `/api/v1/analytics/report` | 필요 | Phase 5, 현재 404 |
 
 ## 공통
@@ -39,7 +40,9 @@
 | 401 | `AUTH_REQUIRED` | 토큰 없음 |
 | 401 | `INVALID_TOKEN` | 토큰 무효 |
 | 403 | `LIVE_FORBIDDEN` | 계좌 소유자가 아님 |
-| 422 | `VALIDATION_ERROR` | 쿼리 값 오류. `details.fields`에 항목 표시 |
+| 404 | `HOLDING_NOT_FOUND` | 시뮬레이션 대상 종목이 보유 종목에 없음 |
+| 422 | `VALIDATION_ERROR` | 요청 형식 오류. `details.fields`에 항목, `details.reasons`에 사유 |
+| 422 | `INVALID_SIMULATION_INPUT` | 시뮬레이션 입력이 계산 조건에 맞지 않음(목표 합계, 모르는 항목 등) |
 | 500 | `MOCK_DATA_UNAVAILABLE` | Seed 파일을 읽지 못함 |
 | 500 | `INTERNAL_ERROR` | 예기치 못한 오류. 내부 정보는 응답에 넣지 않음 |
 | 503 | `AUTH_NOT_CONFIGURED` | 토큰 검증기 미구성. 현재 모든 LIVE 요청의 응답 |
@@ -150,6 +153,91 @@ Mock 이력은 가상입니다. 마지막 시점은 현재 Mock 합계와 일치
 
 ## GET /api/v1/analytics/allocation
 
-쿼리 `dimension`: `asset_class`(기본값), `asset_type`, `market`, `currency`. 공통 메타와 `dimension`, `slices`, `excluded_symbols`를 반환합니다. 평가금액을 알 수 없는 종목은 비중에서 빠지고 `excluded_symbols`에 기록됩니다.
+쿼리 `dimension`: `asset_class`(기본값), `asset_type`, `market`, `currency`, `exposure_country`, `sector`. 분류 값이 없는 종목은 `is_unclassified: true`인 묶음 하나로 모아 마지막에 둡니다. 각 묶음의 `symbols`에 종목코드가 들어 있습니다. 공통 메타와 `dimension`, `slices`, `excluded_symbols`를 반환합니다. 평가금액을 알 수 없는 종목은 비중에서 빠지고 `excluded_symbols`에 기록됩니다.
 
 오류 예시: `dimension=foo` → 422 `VALIDATION_ERROR`
+
+## GET /api/v1/analytics/risk
+
+공통 메타에 다음이 더해집니다.
+
+| 필드 | 내용 |
+| --- | --- |
+| `concentration` | `top1_pct`, `top3_pct`, `top5_pct`, `hhi`(0~10000), `effective_holdings` |
+| `allocations` | `asset_class`, `exposure_country`, `sector`, `currency` 차원의 비중 목록 |
+| `overlap.benchmark_groups` | 추종 지수가 같은 ETF 묶음과 합계 비중 |
+| `overlap.constituent_overlap` | `status`(`not_applicable`·`unavailable`·`partial`·`complete`), `covered_etfs`, `missing_etfs`, `overlaps` |
+| `unavailable_metrics` | 계산하지 않은 지표와 사유 |
+| `insights` | 분석 엔진이 계산한 사실 문장(`key`, `title`, `detail`). AI 결과가 아님 |
+| `excluded_symbols`, `assumptions` | 제외 종목과 계산 전제 |
+
+Mock 응답 예시(발췌):
+
+```json
+{
+  "source": "mock", "is_demo": true, "as_of": "2026-10-30T15:30:00+09:00",
+  "concentration": { "top1_pct": "20.2055", "top3_pct": "51.0643", "top5_pct": "69.5087", "hhi": "1269.5804", "effective_holdings": "7.8766" },
+  "overlap": {
+    "benchmark_groups": [{ "benchmark": "S&P 500", "combined_weight_pct": "28.7956", "holdings": ["…"] }],
+    "constituent_overlap": { "status": "unavailable", "covered_etfs": [], "missing_etfs": ["VOO", "QQQ", "SOXX", "360750", "133690", "411060"], "overlaps": [] }
+  },
+  "insights": [{ "key": "top3", "title": "상위 3개 종목 비중 51.06%", "detail": "…" }]
+}
+```
+
+### ETF 구성 종목 파일
+
+`data/mock/etf_compositions.json`이 있으면 Mock Provider가 읽습니다. 기본으로는 없습니다. 실제 출처에서 확인한 데이터만 넣습니다. 구성 비중 합이 100.5%를 넘으면 오류입니다.
+
+```json
+{
+  "compositions": [
+    {
+      "etf_symbol": "SOXX", "etf_market": "NASDAQ", "as_of": "2026-10-30T00:00:00+00:00", "provider": "데이터 제공처",
+      "constituents": [{ "symbol": "NVDA", "market": "NASDAQ", "name": "NVIDIA", "weight_pct": "8.12" }]
+    }
+  ]
+}
+```
+
+## 시뮬레이션 공통
+
+요청 본문의 숫자는 문자열로 보내는 것을 권장합니다(정밀도 보존). 응답에는 공통 메타와 `is_theoretical: true`, `assumptions`가 포함됩니다. 결과는 저장하지 않으며 주문을 실행하지 않습니다.
+
+## POST /api/v1/simulations/buy
+
+| 필드 | 필수 | 설명 |
+| --- | --- | --- |
+| `symbol`, `market` | 예 | 보유 종목 |
+| `mode` | 예 | `quantity` 또는 `amount` |
+| `quantity` / `amount` | 모드에 따라 | 수량, 또는 수수료·세금 제외 매수 금액(거래 통화) |
+| `price` | 예 | 가정 매수가(거래 통화) |
+| `allow_fractional` | 아니오 | 기본 `false`. 소수 수량 허용 |
+| `fee_amount`, `tax_amount` | 아니오 | 없으면 미적용 |
+| `fx_rate` | 아니오 | 없으면 현재 환율 |
+
+```json
+{ "symbol": "005930", "market": "KRX", "mode": "quantity", "quantity": "10", "price": "80000" }
+```
+
+응답의 `before`·`after`에 수량, 평균단가, 원금, 평가금액, 비중이 있고, `purchase`에 매수 금액, 수수료, 세금, 총 필요 금액, 적용 환율과 출처(`same_currency`·`input`·`current`·`unavailable`), 남는 금액이 있습니다. `weights`는 전 종목의 비중 변화입니다. 위 예시의 새 평균단가는 `71876.92`(9,344,000 ÷ 130)입니다.
+
+## POST /api/v1/simulations/rebalance
+
+```json
+{ "dimension": "asset_class", "targets": [{ "key": "broad_index_etf", "target_pct": "50" }, { "key": "other", "target_pct": "50" }], "additional_cash": "0" }
+```
+
+`dimension`이 `holding`이면 `key`는 `시장:종목코드`(예: `KRX:005930`)입니다. 목표 합계가 100%가 아니거나, 중복·미지 항목이 있으면 422 `INVALID_SIMULATION_INPUT`입니다. 응답 `rows`에 현재·목표 비중, 차이, 목표 금액, 조정 금액, 이론 수량(종목 단위), `implicit_target`이 있고 `constraints_not_applied`에 반영하지 않은 제약이 있습니다.
+
+## POST /api/v1/simulations/scenario
+
+```json
+{
+  "shocks": [{ "type": "asset_class", "key": "sector_etf", "change_pct": "-30" }],
+  "fx_shocks": [{ "currency": "USD", "change_pct": "-5" }],
+  "standalone_change_pct": "-20"
+}
+```
+
+변화율은 -100 이상 1000 이하이며 하나 이상 지정해야 합니다. 응답에는 전체 변화(`total_before`, `total_after`, `total_change`, `total_change_pct`), 종목별 결과 `rows`(적용된 변화율과 출처), `standalone`(종목별 단독 민감도)이 있습니다.

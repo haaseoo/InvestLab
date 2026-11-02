@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 
+from app.schemas.analysis import EtfComposition
 from app.schemas.portfolio import (
     AccountSummary,
     FxRate,
@@ -31,6 +32,10 @@ class PortfolioProvider(ABC):
 
     @abstractmethod
     async def get_history(self) -> list[SnapshotPoint]: ...
+
+    @abstractmethod
+    async def get_etf_compositions(self) -> list[EtfComposition]:
+        """보유 ETF의 구성 종목. 데이터가 없는 ETF는 목록에서 빠진다. 추정해 채우지 않는다."""
 
     @abstractmethod
     def get_provider_status(self) -> ProviderStatus:
