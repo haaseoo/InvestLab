@@ -44,10 +44,40 @@ class LiveOwnerNotConfiguredError(AppError):
     message = "LIVE 계좌 소유자가 지정되지 않아 LIVE 데이터를 조회할 수 없습니다."
 
 
-class LiveNotImplementedError(AppError):
+class KisNotConfiguredError(AppError):
     status_code = 503
-    code = "LIVE_NOT_IMPLEMENTED"
-    message = "한국투자증권 연동이 아직 구현되지 않았습니다."
+    code = "KIS_NOT_CONFIGURED"
+    message = "한국투자증권 App Key·Secret 또는 계좌번호가 설정되지 않았습니다."
+
+
+class KisAuthError(AppError):
+    status_code = 503
+    code = "KIS_AUTH_FAILED"
+    message = "한국투자증권 접근 토큰을 발급받지 못했습니다. App Key·Secret을 확인해 주세요."
+
+
+class KisRateLimitedError(AppError):
+    status_code = 503
+    code = "KIS_RATE_LIMITED"
+    message = "한국투자증권 호출 한도에 걸렸습니다. 잠시 후 다시 시도해 주세요."
+
+
+class KisUnavailableError(AppError):
+    status_code = 503
+    code = "KIS_UNAVAILABLE"
+    message = "한국투자증권 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요."
+
+
+class KisApiError(AppError):
+    status_code = 502
+    code = "KIS_API_ERROR"
+    message = "한국투자증권이 오류를 반환했습니다."
+
+
+class KisResponseError(AppError):
+    status_code = 502
+    code = "KIS_RESPONSE_INVALID"
+    message = "한국투자증권 응답 형식이 예상과 달라 데이터를 사용하지 않았습니다."
 
 
 class MockDataError(AppError):

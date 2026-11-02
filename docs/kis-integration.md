@@ -1,57 +1,88 @@
-# 한국투자증권 연동 (Phase 4 준비 자료)
+# 한국투자증권 연동 (Phase 4)
 
-**현재 구현되어 있지 않습니다.** `KISPortfolioProvider`는 API를 호출하지 않고 항상 `LIVE_NOT_IMPLEMENTED` 오류를 냅니다.
+조회 전용으로 연결되어 있습니다. 주문·정정·취소·자동매매는 구현하지 않으며, 클라이언트가 주문 경로를 호출할 수 없게 허용 목록으로 막습니다.
 
 ## 확인 출처
 
-2026-11-02에 공식 저장소 [koreainvestment/open-trading-api](https://github.com/koreainvestment/open-trading-api)의 `README.md`, `llms.txt`, `kis_devlp.yaml`, `examples_llm/kis_auth.py`와 아래 예제 파일에서 확인했습니다. 구현 전에 [API 포털](https://apiportal.koreainvestment.com/)에서 다시 확인해야 합니다.
+- 공식 저장소 [koreainvestment/open-trading-api](https://github.com/koreainvestment/open-trading-api)의 `examples_llm`(요청 파라미터·응답 컬럼 정의), `kis_auth.py`(헤더·토큰·연속 조회), `stocks_info`(종목 마스터 형식)
+- 2026-11-02 실제 계좌 응답의 **구조**(필드 이름과 값 형태). 금액·종목은 기록하지 않았습니다.
+- ETF 구분 코드는 계좌와 무관한 공개 종목(005930, 069500, 360750, VOO, QQQ)으로 확인했습니다.
 
-## 도메인
+## 사용하는 API
 
-| 환경 | 주소 |
+| 용도 | 경로 | TR ID | 비고 |
+| --- | --- | --- | --- |
+| 토큰 발급 | `/oauth2/tokenP` | – | 1일 유효, 재발급 1분당 1회, 발급 시 알림톡 |
+| 국내 잔고 | `/uapi/domestic-stock/v1/trading/inquire-balance` | `TTTC8434R` | `INQR_DVSN=02`(종목별), 연속 조회 `CTX_AREA_FK100/NK100` |
+| 해외 잔고 | `/uapi/overseas-stock/v1/trading/inquire-present-balance` | `CTRP6504R` | 체결기준현재잔고. `WCRC_FRCR_DVSN_CD=02`, `NATN_CD=000` 한 번으로 전 국가 |
+| 국내 종목 구분 | `/uapi/domestic-stock/v1/quotations/search-stock-info` | `CTPF1002R` | `scty_grp_id_cd`: `ST` 주권, `EF` ETF |
+| 해외 종목 구분 | 공식 마스터 파일 `{nas,nys,ams,...}mst.cod.zip` | – | 증권유형 `2` 주식, `3` ETP(구분코드 `001` ETF) |
+
+별도의 현재가 API는 부르지 않습니다. 두 잔고 응답에 현재가·평가금액·환율이 모두 들어 있어 화면 하나당 KIS 호출은 2번(국내 종목이 있으면 종목당 1번 추가, 하루 캐시)입니다.
+
+해외 잔고는 `TTTS3012R`(해외주식 잔고) 대신 `CTRP6504R`을 씁니다. 거래소별로 나눠 부를 필요가 없고, 통화별 환율(`frst_bltn_exrt`)과 외화 예수금이 함께 오기 때문입니다.
+
+해외 ETF 구분은 API로 할 수 없습니다. 상품기본정보(`CTPF1702R`)의 `ovrs_stck_dvsn_cd`는 VOO·QQQ도 일반 주식과 같은 `01`로 줍니다. 그래서 공식 마스터 파일을 하루 한 번 받아 서버 로컬(`.cache/kis_master/`)에 두 필드만 저장합니다. 받지 못하면 "기타"로 두며 주식으로 가정하지 않습니다.
+
+## 필드 매핑
+
+| 내부 값 | 국내(`TTTC8434R` output1) | 해외(`CTRP6504R` output1) |
+| --- | --- | --- |
+| symbol | `pdno` | `pdno` |
+| name | `prdt_name` | `prdt_name` |
+| quantity | `hldg_qty` | `ccld_qty_smtl1` (체결수량합계) |
+| average_cost | `pchs_avg_pric` | `avg_unpr3` |
+| current_price | `prpr` | `ovrs_now_pric1` |
+| reported_market_value | `evlu_amt` | `frcr_evlu_amt2` (외화) |
+| currency | KRW | `buy_crcy_cd` |
+| 환율 | – | output2 `frst_bltn_exrt` (없으면 행의 `bass_exrt`) |
+| 예수금 | output2 `dnca_tot_amt` | output2 `frcr_dncl_amt_2` |
+
+- 해외 수량은 `cblc_qty13`(잔고수량)이 아니라 `ccld_qty_smtl1`을 씁니다. 당일 매수분은 `cblc_qty13`에 빠지지만 평가금액·매입금액은 `ccld_qty_smtl1` 기준임을 실제 응답으로 확인했습니다.
+- 현재가가 0이거나 비어 있으면 시세 없음(`null`)으로 보고 평가금액도 쓰지 않습니다.
+- 필수 필드가 없거나 숫자가 아니면 그 응답 전체를 쓰지 않습니다(`KIS_RESPONSE_INVALID`).
+- 실제 계좌로 확인한 결과, 원화 환산 총평가액이 KIS가 계산한 원화 합계와 0.002% 이내로 일치했습니다.
+- 국내 잔고 필드 매핑은 공식 정의를 따랐지만, 확인 당시 국내 보유 종목이 없어 실제 값으로는 검증하지 못했습니다.
+
+## 분류
+
+KIS는 시장지수형/섹터형 ETF, 투자 대상 국가, 섹터, 추종 지수를 주지 않습니다. 추정하지 않고 다음과 같이 둡니다.
+
+- 주식: 국내 개별주 / 해외 개별주, 투자 대상 국가 = 상장 국가
+- ETF: `ETF (유형 미분류)`, 투자 대상 국가·섹터·추종 지수 없음
+- 사용자가 `data/live/classifications.json`에 직접 지정하면 그 값을 씁니다. 보유 종목이 드러나므로 `.gitignore` 대상이며, 형식은 `data/live/classifications.example.json`에 있습니다.
+
+## 토큰과 호출 제한
+
+- 토큰은 메모리와 `.cache/kis_token.json`(권한 600, `.gitignore` 대상)에 저장합니다. 서버를 재시작해도 재사용하며, App Key의 해시로 다른 키의 토큰을 구분합니다. 만료 10분 전부터 새로 발급합니다.
+- 발급 시도는 1분에 한 번으로 제한합니다. 넘으면 KIS에 보내지 않고 `KIS_RATE_LIMITED`를 돌려줍니다.
+- 만료·무효 토큰 응답(`EGW00123`, `EGW00121`)을 받으면 한 번만 재발급 후 재시도합니다.
+- 호출 사이에 최소 0.12초를 둡니다. `EGW00201`(초당 한도)은 0.5초, 1초 대기 후 두 번까지 재시도합니다.
+- 연속 조회는 최대 10페이지입니다. 더 있으면 일부만 보여 주지 않고 오류로 처리합니다.
+- 한 화면이 여러 API를 동시에 부르므로 잔고 결과를 30초 동안 공유합니다.
+
+## 실패 처리
+
+| 상황 | 응답 |
 | --- | --- |
-| 실전 | `https://openapi.koreainvestment.com:9443` |
-| 모의투자 | `https://openapivts.koreainvestment.com:29443` |
+| 키·계좌 미설정, 계좌 형식 오류 | 503 `KIS_NOT_CONFIGURED` |
+| 토큰 발급 거부 | 503 `KIS_AUTH_FAILED` (KIS 오류 코드만 포함) |
+| 호출 한도 | 503 `KIS_RATE_LIMITED` |
+| 연결 실패·시간 초과 | 503 `KIS_UNAVAILABLE` |
+| KIS 오류 응답 | 502 `KIS_API_ERROR` (`msg_cd`만 포함, `msg1`은 싣지 않음) |
+| 응답 형식 이상 | 502 `KIS_RESPONSE_INVALID` |
 
-모의투자(PAPER)는 초기 범위가 아닙니다.
+국내·해외 중 하나라도 실패하면 전체를 오류로 돌려줍니다. 일부 잔고로 총액을 보여 주지 않고, Mock으로 대체하지 않습니다.
 
-## 엔드포인트
+## 비밀 값
 
-조회용만 사용합니다. 주문 API는 사용하지 않습니다.
+- App Key·Secret·토큰·계좌번호는 응답·예외 메시지·로그에 싣지 않습니다. 응답에는 계좌번호 자체가 없습니다(내부 요약은 끝 2자리만 남긴 마스킹).
+- `httpx`는 INFO 로그에 요청 URL 전체(계좌 파라미터 포함)를 남기므로 WARNING 이상만 기록하게 했고, 로그 마스킹에 `CANO=`·`ACNT_PRDT_CD=` 패턴을 추가했습니다.
 
-| 용도 | 경로 | TR ID (실전) | TR ID (모의) | 예제 |
-| --- | --- | --- | --- | --- |
-| 토큰 발급 | `/oauth2/tokenP` | – | – | `examples_llm/auth/auth_token` |
-| 국내 잔고 | `/uapi/domestic-stock/v1/trading/inquire-balance` | `TTTC8434R` | `VTTC8434R` | `examples_llm/domestic_stock/inquire_balance` |
-| 해외 잔고 | `/uapi/overseas-stock/v1/trading/inquire-balance` | `TTTS3012R` | `VTTS3012R` | `examples_llm/overseas_stock/inquire_balance` |
-| 국내 현재가 | `/uapi/domestic-stock/v1/quotations/inquire-price` | `FHKST01010100` | `FHKST01010100` | `examples_llm/domestic_stock/inquire_price` |
-| 해외 현재가 | `/uapi/overseas-price/v1/quotations/price` | `HHDFS00000300` | `HHDFS00000300` | `examples_llm/overseas_stock/price` |
+## LIVE 이력
 
-## 요청 공통 사항
-
-- 헤더: `authorization: Bearer <token>`, `appkey`, `appsecret`, `tr_id`, `custtype: P`(개인·법인 일반 고객)
-- 계좌: `CANO`(8자리), `ACNT_PRDT_CD`(2자리, 종합계좌 `01`)
-- 연속 조회: 국내 `CTX_AREA_FK100`/`NK100`, 해외 `CTX_AREA_FK200`/`NK200`
-- 해외 잔고 거래소 코드 `OVRS_EXCG_CD`: 실전에서 `NASD`(미국 전체), `NAS`, `NYSE`, `AMEX`, 그 외 `SEHK`, `SHAA`, `SZAA`, `TKSE`, `HASE`, `VNSE`
-
-## 호출 제한
-
-- 토큰 재발급은 1분당 1회입니다(공식 README). 토큰을 서버에 캐시하고 응답의 `access_token_token_expired`로 만료를 판단합니다. 프로세스를 재시작해도 재발급이 몰리지 않게 저장 방식을 정해야 합니다.
-- 초당 호출 한도를 넘으면 `EGW00201` 오류가 납니다. 구체적인 한도 수치는 포털에서 확인해야 합니다. 공식 예제는 호출 사이에 대기 시간을 둡니다.
-- 모의투자 계좌의 REST 호출 한도는 실전보다 낮습니다.
-
-## 구현 체크리스트
-
-- [ ] 응답 필드 이름과 의미를 포털 문서로 확인하고 `Position`, `Quote`, `reported_market_value`에 매핑
-- [ ] 평균단가, 평가금액, 환율 필드의 존재 여부 확인. 없는 값을 추정하지 않음
-- [ ] `asset_class` 판별 근거 확인. KIS가 ETF 구분을 제공하지 않으면 `other`로 두지 말고 별도 처리 방안 결정
-- [ ] 해외 잔고의 거래소별 조회와 통화 처리 확인
-- [ ] `httpx` 타임아웃과 제한적 재시도. `EGW00201`과 토큰 오류를 구분
-- [ ] 시세 실패 시 `current_price=None`으로 부분 결과 반환
-- [ ] 전체 실패 시 오류 반환. Mock으로 대체하지 않음
-- [ ] 키·토큰·계좌번호가 로그, 예외 메시지, 응답에 남지 않는지 테스트
-- [ ] 첫 연결은 사용자 확인 후 진행. App Key와 계좌번호는 사용자가 `.env`에 직접 입력
+KIS는 과거 평가금액을 주지 않습니다. 대시보드의 LIVE 총자산 변화는 소유자가 설정 화면에서 저장한 스냅샷으로 그립니다. 평가하지 못한 종목이 있는(불완전한) 스냅샷은 선에 넣지 않습니다. 자동 저장(스케줄러)은 아직 없습니다.
 
 ## 미지원
 
-주문, 정정, 취소, 자동매매, 웹소켓 실시간 시세는 구현하지 않습니다. 선물옵션, 채권, ELW 잔고는 초기 범위가 아닙니다.
+주문, 정정, 취소, 자동매매, 웹소켓 실시간 시세, 모의투자, 선물옵션·채권·ELW 잔고, ETF 구성 종목(확인된 데이터 출처 없음).

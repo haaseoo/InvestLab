@@ -9,7 +9,7 @@ apps/api   FastAPI
    ├─ routers/    요청 처리, source 해석과 LIVE 인가
    ├─ services/   valuation(종목 평가), analytics(집계), portfolio(응답 조립)
    ├─ providers/  PortfolioProvider ─ MockPortfolioProvider (data/mock)
-   │                                └ KISPortfolioProvider (Phase 4 전까지 항상 오류)
+   │                                └ KISPortfolioProvider (조회 전용, integrations/kis)
    ├─ schemas/    공통 금융 모델
    └─ core/       설정, 오류, 로그 마스킹, LIVE 인가
 ```
@@ -135,7 +135,7 @@ KIS 인증정보는 서버에 하나뿐이라 로그인만으로는 부족합니
 3. 토큰 무효(서명·만료·발급자·대상·역할) → 401 `INVALID_TOKEN`
 4. 소유자 미지정 → 503 `LIVE_OWNER_NOT_CONFIGURED`
 5. 소유자 아님 → 403 `LIVE_FORBIDDEN`
-6. 통과 → KIS Provider 호출. 현재는 503 `LIVE_NOT_IMPLEMENTED`
+6. 통과 → KIS Provider 호출(국내·해외 잔고). 실패하면 KIS 오류를 반환하며 Mock으로 대체하지 않음
 
 프론트엔드의 모드 선택은 표시 설정일 뿐 권한이 아닙니다. TanStack Query 키에 `source`가 포함되어 LIVE 실패 중에 Mock 캐시가 보이지 않습니다.
 
@@ -151,5 +151,5 @@ KIS 인증정보는 서버에 하나뿐이라 로그인만으로는 부족합니
 
 ## 앞으로 필요한 결정
 
-- **매입 환율:** 환차손익을 반영하려면 매입 시점 환율이 필요합니다. KIS 응답 제공 여부를 Phase 4에서 확인합니다.
-- **스냅샷 저장 주기:** Phase 3에서 정합니다.
+- **매입 환율:** 사용하는 해외 잔고 응답에는 매입 시점 환율이 없습니다(원화 매입금액도 현재 환율로 환산된 값과 일치함을 확인). 환차손익은 계속 반영하지 않습니다.
+- **스냅샷 자동 저장:** 현재는 소유자가 설정 화면에서 직접 저장합니다. 매일 자동 저장하려면 스케줄러와 서버 상시 실행이 필요합니다.

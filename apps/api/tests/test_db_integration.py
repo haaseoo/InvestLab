@@ -491,7 +491,7 @@ class TestApiWithDb:
     def test_kis_not_connected_saves_nothing(self, api):
         r = api.post("/api/v1/snapshots", params={"source": "live"}, headers=h("owner"))
         assert r.status_code == 503
-        assert r.json()["error"]["code"] == "LIVE_NOT_IMPLEMENTED"
+        assert r.json()["error"]["code"] == "KIS_NOT_CONFIGURED"
         assert api.get("/api/v1/snapshots", headers=h("owner")).json()["snapshots"] == []
 
     def test_mock_snapshot_rejected(self, api):
@@ -516,6 +516,46 @@ class TestApiWithDb:
         assert api.delete(f"/api/v1/snapshots/{body['id']}", headers=h("other")).status_code == 404
         assert api.delete(f"/api/v1/snapshots/{body['id']}", headers=h("owner")).status_code == 204
 
+    def test_kis_snapshot_feeds_live_history(self, api, tmp_path):
+        """KIS Provider(가짜 전송 계층) → 스냅샷 저장 → LIVE 이력 차트."""
+        from app.providers.kis import KISPortfolioProvider
+        from tests.kis_fakes import ACCOUNT, APP_KEY, APP_SECRET, FakeKis, FakeMaster
+
+        fake = FakeKis()
+        settings = Settings(
+            _env_file=None,
+            kis_app_key=APP_KEY,
+            kis_app_secret=APP_SECRET,
+            kis_account_no=ACCOUNT,
+            kis_token_cache_path=tmp_path / "token.json",
+            live_classification_file=tmp_path / "none.json",
+        )
+        from app.integrations.kis.client import KisClient
+
+        api.app.state.providers[Source.LIVE] = KISPortfolioProvider(
+            settings,
+            client=KisClient(
+                APP_KEY, APP_SECRET, tmp_path / "token.json", transport=fake.transport()
+            ),
+            master=FakeMaster(),
+        )
+        assert (
+            api.get(
+                "/api/v1/portfolio/history", params={"source": "live"}, headers=h("owner")
+            ).json()["points"]
+            == []
+        )
+        r = api.post("/api/v1/snapshots", params={"source": "live"}, headers=h("owner"))
+        assert r.status_code == 201
+        assert D(r.json()["total_market_value"]) == D(1310000)
+        points = api.get(
+            "/api/v1/portfolio/history", params={"source": "live"}, headers=h("owner")
+        ).json()["points"]
+        assert len(points) == 1 and D(points[0]["total_market_value"]) == D(1310000)
+        # 다른 사용자는 LIVE 이력 자체에 접근할 수 없다
+        other = api.get("/api/v1/portfolio/history", params={"source": "live"}, headers=h("other"))
+        assert other.status_code == 403
+
     def test_non_owner_cannot_capture_live(self, api):
         api.app.state.providers[Source.LIVE] = FakeLiveProvider()
         r = api.post("/api/v1/snapshots", params={"source": "live"}, headers=h("other"))
@@ -536,12 +576,24 @@ class TestApiWithDb:
         assert api.get("/api/v1/settings", headers=h("forged")).status_code == 401
 
 
-def test_nothing_persisted_after_tests(engine):
-    """롤백이 실제로 동작했는지: 테스트가 남긴 스냅샷·기록·임시 사용자가 없어야 한다."""
+def _counts(engine) -> tuple[int, int, int]:
     with engine.connect() as c:
         snapshots = c.execute(text("select count(*) from public.portfolio_snapshots")).scalar_one()
         history = c.execute(text("select count(*) from public.simulation_history")).scalar_one()
         temp_users = c.execute(
             text("select count(*) from auth.users where email like '%@example.invalid'")
         ).scalar_one()
-    assert (snapshots, history, temp_users) == (0, 0, 0)
+    return snapshots, history, temp_users
+
+
+@pytest.fixture(scope="module", autouse=True)
+def baseline_counts(engine):
+    """실제 사용자가 저장한 스냅샷이 있을 수 있으므로 테스트 전 개수를 기준으로 삼는다."""
+    return _counts(engine)
+
+
+def test_nothing_persisted_after_tests(engine, baseline_counts):
+    """롤백이 실제로 동작했는지: 테스트 전후의 행 수가 같고 임시 사용자가 없어야 한다."""
+    after = _counts(engine)
+    assert after == baseline_counts
+    assert after[2] == 0

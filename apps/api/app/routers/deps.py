@@ -30,7 +30,8 @@ async def resolve_provider(
     source: Annotated[Source, Query(description="데이터 출처. 기본값은 mock")] = Source.MOCK,
 ) -> PortfolioProvider:
     if source is Source.LIVE:
-        await authorize_live_access(
+        # LIVE 이력은 사용자 본인의 스냅샷(RLS)에서 읽으므로 확인된 사용자를 남겨 둔다.
+        request.state.live_user = await authorize_live_access(
             token=credentials.credentials if credentials else None,
             verifier=request.app.state.token_verifier,
             owner_user_id=request.app.state.settings.live_owner_user_id,

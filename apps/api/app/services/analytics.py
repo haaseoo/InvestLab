@@ -25,6 +25,7 @@ ASSET_CLASS_LABELS = {
     AssetClass.SECTOR_ETF: "섹터·테마 ETF",
     AssetClass.DOMESTIC_STOCK: "국내 개별주",
     AssetClass.OVERSEAS_STOCK: "해외 개별주",
+    AssetClass.ETF_UNCLASSIFIED: "ETF (유형 미분류)",
     AssetClass.OTHER: "기타 자산",
 }
 ASSET_TYPE_LABELS = {

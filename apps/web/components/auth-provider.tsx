@@ -38,6 +38,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const lastUserId = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
+    // 비밀번호 재설정 메일 링크는 Site URL(첫 화면)로 온다. 재설정 화면으로 # 부분을 그대로 넘긴다.
+    const { hash, pathname } = window.location;
+    if (hash.includes("type=recovery") && pathname !== "/reset-password") {
+      window.location.replace(`/reset-password${hash}`);
+      return;
+    }
     const supabase = getSupabase();
     if (!supabase) return;
     const { data } = supabase.auth.onAuthStateChange((event, session) => {

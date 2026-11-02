@@ -45,6 +45,8 @@ class AssetClass(StrEnum):
     SECTOR_ETF = "sector_etf"
     DOMESTIC_STOCK = "domestic_stock"
     OVERSEAS_STOCK = "overseas_stock"
+    # ETF임은 확인했지만 시장지수형·섹터형 구분 정보가 없는 경우(LIVE). 추정해 나누지 않는다.
+    ETF_UNCLASSIFIED = "etf_unclassified"
     OTHER = "other"
 
 

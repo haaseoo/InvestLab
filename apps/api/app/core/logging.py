@@ -11,6 +11,8 @@ _SECRET_PAIR = re.compile(
     re.IGNORECASE,
 )
 _ACCOUNT = re.compile(r"\b\d{8}-?\d{2}\b")
+# KIS 요청 URL의 계좌 파라미터(CANO=8자리, ACNT_PRDT_CD=2자리)
+_ACCOUNT_PARAM = re.compile(r"\b(CANO|ACNT_PRDT_CD)=\d+", re.IGNORECASE)
 # postgresql://user:password@host 형태의 연결 문자열
 _DSN = re.compile(r"\b(postgres(?:ql)?(?:\+\w+)?)://[^\s:/@]+:[^\s@]+@", re.IGNORECASE)
 # JWT(header.payload.signature)
@@ -24,6 +26,7 @@ def mask_sensitive(text: str) -> str:
     text = _SUPABASE_KEY.sub(r"sb_\1_***", text)
     text = _BEARER.sub("Bearer ***", text)
     text = _SECRET_PAIR.sub(lambda m: f"{m.group(1)}{m.group(2)}***", text)
+    text = _ACCOUNT_PARAM.sub(r"\1=***", text)
     return _ACCOUNT.sub("********-**", text)
 
 

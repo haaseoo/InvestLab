@@ -43,10 +43,10 @@ class TestLive:
         assert r.json()["error"]["code"] == "AUTH_REQUIRED"
 
     @pytest.mark.parametrize("path", LIVE_GET)
-    def test_owner_reaches_provider_and_gets_not_connected(self, client, key, path):
+    def test_owner_reaches_provider_and_gets_not_configured(self, client, key, path):
         r = client.get(path, params={"source": "live"}, headers=auth(key.sign()))
         assert r.status_code == 503
-        assert r.json()["error"]["code"] == "LIVE_NOT_IMPLEMENTED"
+        assert r.json()["error"]["code"] in {"KIS_NOT_CONFIGURED", "DB_NOT_CONFIGURED"}
         assert "VOO" not in r.text  # Mock으로 대체하지 않는다
 
     def test_non_owner_403(self, client, key):
@@ -137,7 +137,8 @@ class TestAccount:
         assert checks["auth"] is True
         assert checks["owner"] is True
         assert checks["database"] is False
-        assert checks["adapter"] is False
+        assert checks["kis_credentials"] is False
+        assert live["state"] == "not_configured"
 
 
 class TestNoSecretsInLogs:

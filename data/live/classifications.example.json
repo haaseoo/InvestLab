@@ -1,0 +1,15 @@
+{
+  "holdings": {
+    "VOO": {
+      "asset_class": "broad_index_etf",
+      "exposure_country": "US",
+      "benchmark": "S&P 500"
+    },
+    "SOXX": {
+      "asset_class": "sector_etf",
+      "exposure_country": "US",
+      "sector": "반도체",
+      "benchmark": "NYSE Semiconductor Index"
+    }
+  }
+}

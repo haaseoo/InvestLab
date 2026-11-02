@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     kis_app_key: SecretStr | None = None
     kis_app_secret: SecretStr | None = None
     kis_account_no: SecretStr | None = None
+    # 접근 토큰 캐시(권한 600, .gitignore 대상). 재시작 때 재발급하지 않기 위해 둔다.
+    kis_token_cache_path: Path = REPO_ROOT / ".cache" / "kis_token.json"
+    # 보유 ETF의 자산군·추종 지수 등 KIS가 주지 않는 분류. 없으면 미분류로 표시한다.
+    live_classification_file: Path = REPO_ROOT / "data" / "live" / "classifications.json"
 
     # OpenAI (Phase 5)
     openai_api_key: SecretStr | None = None

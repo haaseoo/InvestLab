@@ -33,7 +33,7 @@
 
 ### 데이터 출처
 
-모든 데이터 응답에 `source`와 `is_demo`가 있습니다. `mock`은 `data/mock`의 가상 데이터이고, `live`는 Phase 4부터 한국투자증권 데이터입니다.
+모든 데이터 응답에 `source`와 `is_demo`가 있습니다. `mock`은 `data/mock`의 가상 데이터이고, `live`는 한국투자증권 실제 계좌 데이터입니다. KIS 잔고 응답에는 시세 시각이 없어 `as_of`는 조회 시각이며, 장이 닫혀 있으면 현재가는 마지막 체결가입니다. ETF 유형이 확인되지 않은 종목의 `asset_class`는 `etf_unclassified`입니다.
 
 ### 오류 응답
 
@@ -59,7 +59,12 @@
 | 503 | `DB_NOT_CONFIGURED` | `DATABASE_URL` 미설정 |
 | 503 | `DB_UNAVAILABLE` | DB 접속·쿼리 실패. 상세 원인은 응답에 싣지 않음 |
 | 503 | `LIVE_OWNER_NOT_CONFIGURED` | `LIVE_OWNER_USER_ID` 미설정 |
-| 503 | `LIVE_NOT_IMPLEMENTED` | 인가는 통과했지만 KIS 연동 미구현 |
+| 503 | `KIS_NOT_CONFIGURED` | KIS App Key·Secret·계좌번호 미설정 또는 계좌 형식 오류 |
+| 503 | `KIS_AUTH_FAILED` | KIS 접근 토큰 발급 거부. `details.kis_code`만 포함 |
+| 503 | `KIS_RATE_LIMITED` | KIS 호출 한도(`EGW00201`) 또는 토큰 재발급 1분 제한 |
+| 503 | `KIS_UNAVAILABLE` | KIS 서버 연결 실패·시간 초과 |
+| 502 | `KIS_API_ERROR` | KIS가 오류 반환. `details`에 `tr_id`, `kis_code`만 포함 |
+| 502 | `KIS_RESPONSE_INVALID` | KIS 응답에 필수 필드가 없거나 형식이 다름 |
 
 LIVE 오류 시 Mock 데이터로 대체하지 않습니다.
 
@@ -162,6 +167,8 @@ GET /api/v1/portfolio?source=live → 503 AUTH_NOT_CONFIGURED
 ```
 
 Mock 이력은 가상입니다. 마지막 시점은 현재 Mock 합계와 일치합니다.
+
+`source=live` 이력은 KIS가 아니라 소유자가 저장한 스냅샷(RLS)에서 옵니다. 완전한(`is_complete`) 스냅샷만 `as_of` 순으로 반환하며 `captured_at`에는 스냅샷의 `as_of`가 들어갑니다. DB가 없으면 503 `DB_NOT_CONFIGURED`입니다.
 
 ## GET /api/v1/analytics/allocation
 
@@ -274,7 +281,7 @@ PUT 본문은 `updated_at`을 뺀 같은 형식입니다. `theme`은 `light`·`d
 
 ## 스냅샷
 
-- `POST /api/v1/snapshots?source=live`: LIVE Provider에서 현재 보유 데이터를 받아 검증 후 저장합니다. 201과 상세를 반환합니다. `source=mock`은 422 `MOCK_SNAPSHOT_FORBIDDEN`, 소유자가 아니면 403입니다. KIS 연결 전에는 503 `LIVE_NOT_IMPLEMENTED`이며 아무것도 저장하지 않습니다.
+- `POST /api/v1/snapshots?source=live`: LIVE Provider에서 현재 보유 데이터를 받아 검증 후 저장합니다. 201과 상세를 반환합니다. `source=mock`은 422 `MOCK_SNAPSHOT_FORBIDDEN`, 소유자가 아니면 403입니다. KIS 조회가 실패하면 해당 KIS 오류를 반환하며 아무것도 저장하지 않습니다. 같은 30초 캐시 결과를 두 번 저장하면 409 `SNAPSHOT_EXISTS`입니다.
 - `GET /api/v1/snapshots?limit=30`: 기준 시각 최신순 요약 목록
 - `GET /api/v1/snapshots/{id}`: 상세(`fx_rates`, `content_hash`, `holdings`). 본인 것이 아니면 404
 - `DELETE /api/v1/snapshots/{id}`: 204. 종목 스냅샷도 함께 삭제됩니다.

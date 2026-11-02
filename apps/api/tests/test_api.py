@@ -180,12 +180,13 @@ class TestLiveAccess:
         assert response.json()["error"]["code"] == "LIVE_OWNER_NOT_CONFIGURED"
 
     @pytest.mark.parametrize("path", LIVE_ENDPOINTS)
-    def test_authorized_owner_gets_error_not_mock_fallback(self, live_client, path):
+    def test_unconfigured_kis_is_error_not_mock_fallback(self, live_client, path):
         assert OWNER_ID
         response = live_client.get(path, params={"source": "live"}, headers=bearer("owner-token"))
         assert response.status_code == 503
         body = response.json()
-        assert body["error"]["code"] == "LIVE_NOT_IMPLEMENTED"
+        # KIS 설정이 없으면(이력은 DB가 없으면) 오류다. Mock으로 대체하지 않는다.
+        assert body["error"]["code"] in {"KIS_NOT_CONFIGURED", "DB_NOT_CONFIGURED"}
         assert "holdings" not in body
         assert "VOO" not in response.text
 
@@ -215,6 +216,7 @@ class TestMasking:
             ("access_token: tok_999", "tok_999"),
             ("계좌 50012345-01 조회", "50012345-01"),
             ("계좌 5001234501 조회", "5001234501"),
+            ("GET /inquire-balance?CANO=50012345&ACNT_PRDT_CD=01", "50012345"),
         ],
     )
     def test_mask_sensitive(self, raw, secret):
@@ -401,7 +403,7 @@ class TestSimulationApi:
         )
         assert send(client, params={"source": "live"}).status_code == 503
         response = send(live_client, params={"source": "live"}, headers=bearer("owner-token"))
-        assert response.json()["error"]["code"] == "LIVE_NOT_IMPLEMENTED"
+        assert response.json()["error"]["code"] == "KIS_NOT_CONFIGURED"
 
 
 def test_blank_env_values_are_unset():

@@ -22,3 +22,9 @@ out/
 # OS / 편집기
 .DS_Store
 .vscode/
+
+# KIS 접근 토큰 캐시(서버 로컬, 비밀 값)
+.cache/
+# 실제 보유 종목 분류(개인 정보)
+data/live/*
+!data/live/*.example.json

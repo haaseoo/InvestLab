@@ -122,7 +122,7 @@ function PreferencesCard() {
             <span>
               <span className="font-medium">계좌번호 마스킹</span>
               <span className="block text-[13px] text-subtle">
-                KIS 연결 후 계좌번호를 표시할 때 적용합니다.
+                화면에 계좌번호를 표시하게 되면 적용합니다. 서버 로그·응답에서는 항상 가립니다.
               </span>
             </span>
             <input
@@ -154,7 +154,11 @@ function SnapshotsCard() {
   const queryClient = useQueryClient();
   const capture = useMutation({
     mutationFn: () => api.captureSnapshot(),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["snapshots"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["snapshots"] });
+      // 대시보드의 LIVE 총자산 변화 차트는 저장된 스냅샷으로 그린다.
+      queryClient.invalidateQueries({ queryKey: ["history", "live"] });
+    },
   });
 
   if (!session) return null;

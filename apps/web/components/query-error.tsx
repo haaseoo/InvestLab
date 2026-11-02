@@ -35,6 +35,22 @@ export function ProviderChecklist({ checks }: { checks: ProviderStatus["checks"]
   );
 }
 
+const LIVE_ERROR_TITLES: Record<string, string> = {
+  AUTH_REQUIRED: "LIVE 데이터는 로그인이 필요합니다",
+  INVALID_TOKEN: "로그인이 만료되었습니다",
+  LIVE_FORBIDDEN: "이 계정은 LIVE 조회 권한이 없습니다",
+  AUTH_NOT_CONFIGURED: "사용자 인증이 구성되지 않았습니다",
+  LIVE_OWNER_NOT_CONFIGURED: "LIVE 계좌 소유자가 지정되지 않았습니다",
+  KIS_NOT_CONFIGURED: "실제 계좌가 연결되어 있지 않습니다",
+  KIS_AUTH_FAILED: "한국투자증권 인증에 실패했습니다",
+  KIS_RATE_LIMITED: "한국투자증권 호출 한도에 걸렸습니다",
+  KIS_UNAVAILABLE: "한국투자증권 서버에 연결하지 못했습니다",
+  KIS_API_ERROR: "한국투자증권이 오류를 반환했습니다",
+  KIS_RESPONSE_INVALID: "한국투자증권 응답을 해석하지 못했습니다",
+  DB_NOT_CONFIGURED: "실제 계좌 이력 저장소가 연결되지 않았습니다",
+  DB_UNAVAILABLE: "실제 계좌 이력 저장소에 연결하지 못했습니다",
+};
+
 /** 데이터 조회 실패 화면. LIVE 실패 시 어떤 데이터도 대신 보여 주지 않는다. */
 export function QueryError({ error, onRetry }: { error: Error; onRetry: () => void }) {
   const { source } = useSource();
@@ -56,14 +72,7 @@ export function QueryError({ error, onRetry }: { error: Error; onRetry: () => vo
     const live = status.data?.providers.find((p) => p.source === "live");
     const code = apiError?.code ?? "";
     const needsLogin = code === "AUTH_REQUIRED" || code === "INVALID_TOKEN";
-    const title =
-      code === "AUTH_REQUIRED"
-        ? "LIVE 데이터는 로그인이 필요합니다"
-        : code === "INVALID_TOKEN"
-          ? "로그인이 만료되었습니다"
-          : code === "LIVE_FORBIDDEN"
-            ? "이 계정은 LIVE 조회 권한이 없습니다"
-            : "실제 계좌가 연결되어 있지 않습니다";
+    const title = LIVE_ERROR_TITLES[code] ?? "실제 계좌 데이터를 불러오지 못했습니다";
     return (
       <ErrorState
         title={title}

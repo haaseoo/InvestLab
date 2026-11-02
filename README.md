@@ -2,7 +2,7 @@
 
 주식·ETF 보유 자산을 분석하는 개인 투자 포트폴리오 웹서비스입니다. 조회 전용이며 매수·매도 주문이나 자동매매 기능은 없습니다. 투자 자문이 아닙니다.
 
-현재 상태는 **Phase 3**입니다. Mock 데이터로 전체 흐름·분석 엔진·시뮬레이터가 동작하고, Supabase 로그인과 사용자별 데이터 저장(RLS)이 연결되어 있습니다. 한국투자증권(실제 계좌)과 AI는 아직 연결되지 않았습니다.
+현재 상태는 **Phase 4**입니다. Mock 데이터로 전체 흐름·분석 엔진·시뮬레이터가 동작하고, Supabase 로그인과 사용자별 데이터 저장(RLS), 한국투자증권 실제 계좌 조회(읽기 전용)가 연결되어 있습니다. AI는 아직 연결되지 않았습니다.
 
 ## 기술 스택
 
@@ -11,7 +11,8 @@
 | Frontend | Next.js 16 (App Router), TypeScript, Tailwind CSS 4, shadcn/ui, Recharts, TanStack Query, Lucide, Pretendard |
 | Backend | Python 3.11+, FastAPI, Pydantic v2, httpx, pytest, Ruff |
 | DB·인증 | Supabase PostgreSQL·Auth, SQLAlchemy 2 + psycopg 3, PyJWT(JWKS 검증), @supabase/supabase-js |
-| 예정 | 한국투자증권 Open API (Phase 4), OpenAI API (Phase 5) |
+| 증권 | 한국투자증권 Open API (조회 전용) |
+| 예정 | OpenAI API (Phase 5) |
 
 마이그레이션은 Alembic 대신 `supabase/migrations/`의 SQL 파일로 관리합니다. RLS 정책·권한·트리거가 모두 SQL이라 한 곳에서 검토하기 위해서입니다.
 
@@ -42,7 +43,7 @@ npm run dev
 
 ## LIVE 모드와 로그인
 
-LIVE 데이터는 **로그인한 계좌 소유자(`LIVE_OWNER_USER_ID`)만** 요청할 수 있습니다. 서버는 Supabase 토큰의 서명·만료·발급자·대상·역할을 검증한 뒤 소유자와 비교합니다. 현재는 한국투자증권이 연결되지 않아 소유자가 로그인해도 "실제 계좌 미연결"로 표시되며, Mock 데이터로 대체하지 않습니다.
+LIVE 데이터는 **로그인한 계좌 소유자(`LIVE_OWNER_USER_ID`)만** 요청할 수 있습니다. 서버는 Supabase 토큰의 서명·만료·발급자·대상·역할을 검증한 뒤 소유자와 비교하고, 통과한 경우에만 한국투자증권 잔고를 조회합니다. KIS 조회가 실패하면 오류 화면을 보여 주며 Mock 데이터로 대체하지 않습니다.
 
 - 로그인: 화면 오른쪽 위 **로그인** → 이메일·비밀번호. 신규 가입은 받지 않습니다.
 - 로그인하면 설정(기본 데이터 모드, 계좌번호 마스킹)과 시뮬레이션 결과를 저장할 수 있습니다.
@@ -68,13 +69,14 @@ cd apps/api
 
 Service Role·Secret Key는 쓰지 않습니다. 서버는 사용자 요청마다 트랜잭션 안에서 `authenticated` 역할로 전환해 RLS를 그대로 적용받습니다.
 
-## KIS 연결 준비사항 (Phase 4 예정)
+## 한국투자증권 연결
 
 1. [KIS Developers](https://apiportal.koreainvestment.com/)에서 Open API를 신청하고 App Key·Secret을 발급받습니다.
-2. `.env`에 `KIS_APP_KEY`, `KIS_APP_SECRET`, `KIS_ACCOUNT_NO`를 넣습니다.
+2. `.env`에 `KIS_APP_KEY`, `KIS_APP_SECRET`, `KIS_ACCOUNT_NO`(8자리-2자리)를 넣습니다.
 3. `LIVE_OWNER_USER_ID`에 본인의 Supabase 사용자 id를 넣습니다.
+4. (선택) ETF의 유형·추종 지수, 섹터는 KIS가 주지 않습니다. `data/live/classifications.example.json`을 참고해 `data/live/classifications.json`을 만들면 반영됩니다. 이 파일은 커밋되지 않습니다.
 
-엔드포인트와 TR ID는 [docs/kis-integration.md](docs/kis-integration.md)에 있습니다.
+접근 토큰은 `.cache/kis_token.json`에 저장되어 재시작 때도 재사용됩니다(발급 시 KIS 알림톡이 갑니다). 사용하는 API, 필드 매핑, 호출 제한은 [docs/kis-integration.md](docs/kis-integration.md)에 있습니다.
 
 ## 테스트
 
@@ -90,15 +92,16 @@ cd apps/web && npx tsc --noEmit && npm run lint && npx prettier --check . && npm
 - 보유 종목: 검색, 정렬, 원화 환산/거래 통화 전환, 모바일 카드 보기
 - 분석: 상위 1·3·5 종목 집중도, HHI·유효 종목 수, 자산군·투자 대상 국가·섹터·거래 통화 비중, 동일 지수 추종 ETF, ETF 구성 종목 중복(데이터가 있을 때만), 계산하지 않은 지표와 사유
 - 시뮬레이터: 추가 매수 평균단가, 목표 비중 리밸런싱, 하락 시나리오와 종목별 민감도
-- 설정: 데이터 모드, KIS 연결 준비 상태만 제공
+- 설정: 데이터 모드, KIS 연결 상태, 실제 계좌 스냅샷 저장, 시뮬레이션 기록
+- LIVE: 한국투자증권 국내·해외 잔고(현재가·평가금액·환율 포함) 조회, 저장한 스냅샷으로 그리는 총자산 변화
 - API: `/health`, `/providers/status`, `/portfolio`, `/portfolio/holdings`, `/portfolio/summary`, `/portfolio/history`, `/analytics/allocation`, `/analytics/risk`, `/simulations/buy`, `/simulations/rebalance`, `/simulations/scenario`
 - 시세·환율 누락 처리, LIVE 접근 차단, CORS 제한, 로그 마스킹
 
 - 로그인·로그아웃, 소유자 전용 LIVE 인가, 사용자 설정·시뮬레이션 기록 저장, 실제 계좌 스냅샷 저장 구조
 
-AI 리포트 화면은 안내 문구만 표시합니다. 실제 계좌 스냅샷은 KIS 연결 전이라 저장되지 않습니다.
+AI 리포트 화면은 안내 문구만 표시합니다. 실제 계좌 스냅샷은 소유자가 설정 화면에서 직접 저장합니다(자동 저장 없음).
 
-`integration` 표시가 붙은 테스트는 실제 Supabase에 접속합니다. DB 테스트는 하나의 트랜잭션 안에서 실행 후 롤백하므로 데이터를 남기지 않습니다. 소유자 계정의 실제 로그인 성공은 비밀번호가 필요해 자동 테스트하지 않으며 직접 확인해야 합니다.
+KIS 테스트는 가짜 전송 계층만 쓰며 실제 한국투자증권에 접속하지 않습니다. `integration` 표시가 붙은 테스트는 실제 Supabase에 접속합니다. DB 테스트는 하나의 트랜잭션 안에서 실행 후 롤백하므로 데이터를 남기지 않습니다. 소유자 계정의 실제 로그인 성공은 비밀번호가 필요해 자동 테스트하지 않으며 직접 확인해야 합니다.
 
 ## 향후 개발 계획
 
@@ -106,7 +109,7 @@ AI 리포트 화면은 안내 문구만 표시합니다. 실제 계좌 스냅샷
 | --- | --- |
 | 2 | 완료: 분석 엔진과 시뮬레이터 |
 | 3 | 완료: Supabase 인증, 테이블, RLS, 사용자별 저장, 스냅샷 구조 |
-| 4 | KIS 토큰 관리, 국내·해외 잔고와 시세, 읽기 전용 실계좌 연동 |
+| 4 | 완료: KIS 토큰 관리, 국내·해외 잔고와 시세, 읽기 전용 실계좌 연동 |
 | 5 | OpenAI 리포트, 접근성·성능 개선, 배포 준비 |
 
 ## 문서
@@ -115,3 +118,4 @@ AI 리포트 화면은 안내 문구만 표시합니다. 실제 계좌 스냅샷
 - [API 명세](docs/api-spec.md)
 - [디자인 시스템](docs/design-system.md)
 - [KIS 연동](docs/kis-integration.md)
+- [실습 기록: 2026-11-02 KIS 실계좌 연동](docs/dev-log/2026-11-02-phase4.md)
