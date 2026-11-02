@@ -1,0 +1,146 @@
+{
+  "meta": {
+    "as_of": "2026-10-30T15:30:00+09:00",
+    "notice": "모든 수량·단가·환율은 시연용 가상 값이며 실제 시세나 계좌 정보가 아닙니다."
+  },
+  "fx_rates": [
+    {
+      "base_currency": "USD",
+      "quote_currency": "KRW",
+      "rate": "1385.50",
+      "as_of": "2026-10-30T15:30:00+09:00"
+    }
+  ],
+  "holdings": [
+    {
+      "symbol": "VOO",
+      "market": "AMEX",
+      "asset_type": "etf",
+      "asset_class": "broad_index_etf",
+      "name": "Vanguard S&P 500 ETF",
+      "quantity": "14",
+      "average_cost": "512.30",
+      "current_price": "618.40",
+      "currency": "USD",
+      "country": "US",
+      "sector": null
+    },
+    {
+      "symbol": "QQQ",
+      "market": "NASDAQ",
+      "asset_type": "etf",
+      "asset_class": "broad_index_etf",
+      "name": "Invesco QQQ Trust",
+      "quantity": "10",
+      "average_cost": "468.75",
+      "current_price": "592.10",
+      "currency": "USD",
+      "country": "US",
+      "sector": null
+    },
+    {
+      "symbol": "SOXX",
+      "market": "NASDAQ",
+      "asset_type": "etf",
+      "asset_class": "sector_etf",
+      "name": "iShares Semiconductor ETF",
+      "quantity": "12",
+      "average_cost": "231.40",
+      "current_price": "298.65",
+      "currency": "USD",
+      "country": "US",
+      "sector": "반도체"
+    },
+    {
+      "symbol": "NVDA",
+      "market": "NASDAQ",
+      "asset_type": "stock",
+      "asset_class": "overseas_stock",
+      "name": "NVIDIA",
+      "quantity": "18.5",
+      "average_cost": "128.60",
+      "current_price": "196.20",
+      "currency": "USD",
+      "country": "US",
+      "sector": "반도체"
+    },
+    {
+      "symbol": "TSLA",
+      "market": "NASDAQ",
+      "asset_type": "stock",
+      "asset_class": "overseas_stock",
+      "name": "Tesla",
+      "quantity": "6",
+      "average_cost": "342.10",
+      "current_price": "301.55",
+      "currency": "USD",
+      "country": "US",
+      "sector": "자동차"
+    },
+    {
+      "symbol": "005930",
+      "market": "KRX",
+      "asset_type": "stock",
+      "asset_class": "domestic_stock",
+      "name": "삼성전자",
+      "quantity": "120",
+      "average_cost": "71200",
+      "current_price": "84300",
+      "currency": "KRW",
+      "country": "KR",
+      "sector": "반도체"
+    },
+    {
+      "symbol": "035720",
+      "market": "KRX",
+      "asset_type": "stock",
+      "asset_class": "domestic_stock",
+      "name": "카카오",
+      "quantity": "45",
+      "average_cost": "58400",
+      "current_price": "41250",
+      "currency": "KRW",
+      "country": "KR",
+      "sector": "인터넷"
+    },
+    {
+      "symbol": "360750",
+      "market": "KRX",
+      "asset_type": "etf",
+      "asset_class": "broad_index_etf",
+      "name": "TIGER 미국S&P500",
+      "quantity": "220",
+      "average_cost": "18420",
+      "current_price": "23180",
+      "currency": "KRW",
+      "country": "KR",
+      "sector": null
+    },
+    {
+      "symbol": "133690",
+      "market": "KRX",
+      "asset_type": "etf",
+      "asset_class": "broad_index_etf",
+      "name": "TIGER 미국나스닥100",
+      "quantity": "40",
+      "average_cost": "118500",
+      "current_price": "146250",
+      "currency": "KRW",
+      "country": "KR",
+      "sector": null
+    },
+    {
+      "symbol": "411060",
+      "market": "KRX",
+      "asset_type": "etf",
+      "asset_class": "other",
+      "name": "ACE KRX금현물",
+      "quantity": "150",
+      "average_cost": "17850",
+      "current_price": "24960",
+      "currency": "KRW",
+      "country": "KR",
+      "sector": "금"
+    }
+  ]
+}

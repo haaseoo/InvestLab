@@ -1,0 +1,161 @@
+{
+  "notice": "시연용 가상 이력입니다. 실제 투자 실적이 아닙니다.",
+  "points": [
+    {
+      "captured_at": "2026-05-08T15:30:00+09:00",
+      "total_market_value": "38995558.68",
+      "total_cost_basis": "38022190.60",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-05-15T15:30:00+09:00",
+      "total_market_value": "38349240.70",
+      "total_cost_basis": "38022190.60",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-05-22T15:30:00+09:00",
+      "total_market_value": "39018490.51",
+      "total_cost_basis": "38022190.60",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-05-29T15:30:00+09:00",
+      "total_market_value": "39227671.81",
+      "total_cost_basis": "38022190.60",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-06-05T15:30:00+09:00",
+      "total_market_value": "40299956.84",
+      "total_cost_basis": "38022190.60",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-06-12T15:30:00+09:00",
+      "total_market_value": "40497731.49",
+      "total_cost_basis": "38022190.60",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-06-19T15:30:00+09:00",
+      "total_market_value": "41113750.23",
+      "total_cost_basis": "38022190.60",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-06-26T15:30:00+09:00",
+      "total_market_value": "40178463.60",
+      "total_cost_basis": "38022190.60",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-07-03T15:30:00+09:00",
+      "total_market_value": "44942503.91",
+      "total_cost_basis": "41701757.44",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-07-10T15:30:00+09:00",
+      "total_market_value": "44604784.66",
+      "total_cost_basis": "41701757.44",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-07-17T15:30:00+09:00",
+      "total_market_value": "45234546.19",
+      "total_cost_basis": "41701757.44",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-07-24T15:30:00+09:00",
+      "total_market_value": "46031114.75",
+      "total_cost_basis": "41701757.44",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-07-31T15:30:00+09:00",
+      "total_market_value": "45551609.53",
+      "total_cost_basis": "41701757.44",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-08-07T15:30:00+09:00",
+      "total_market_value": "46156350.00",
+      "total_cost_basis": "41701757.44",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-08-14T15:30:00+09:00",
+      "total_market_value": "47223979.98",
+      "total_cost_basis": "41701757.44",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-08-21T15:30:00+09:00",
+      "total_market_value": "47365830.94",
+      "total_cost_basis": "41701757.44",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-08-28T15:30:00+09:00",
+      "total_market_value": "51300180.54",
+      "total_cost_basis": "45381324.27",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-09-04T15:30:00+09:00",
+      "total_market_value": "52316792.93",
+      "total_cost_basis": "45381324.27",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-09-11T15:30:00+09:00",
+      "total_market_value": "53061117.37",
+      "total_cost_basis": "45381324.27",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-09-18T15:30:00+09:00",
+      "total_market_value": "51949345.65",
+      "total_cost_basis": "45381324.27",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-09-25T15:30:00+09:00",
+      "total_market_value": "53741978.68",
+      "total_cost_basis": "45381324.27",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-10-02T15:30:00+09:00",
+      "total_market_value": "53891807.78",
+      "total_cost_basis": "45381324.27",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-10-09T15:30:00+09:00",
+      "total_market_value": "53587823.63",
+      "total_cost_basis": "45381324.27",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-10-16T15:30:00+09:00",
+      "total_market_value": "53596970.62",
+      "total_cost_basis": "45381324.27",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-10-23T15:30:00+09:00",
+      "total_market_value": "59890464.78",
+      "total_cost_basis": "49060891.10",
+      "valuation_currency": "KRW"
+    },
+    {
+      "captured_at": "2026-10-30T15:30:00+09:00",
+      "total_market_value": "59365589.70",
+      "total_cost_basis": "49060891.10",
+      "valuation_currency": "KRW"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+# 비밀 값: 어떤 경로의 .env도 커밋하지 않는다
+.env
+.env.*
+!.env.example
+kis_devlp.yaml
+*.pem
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# OS / 편집기
+.DS_Store
+.vscode/
