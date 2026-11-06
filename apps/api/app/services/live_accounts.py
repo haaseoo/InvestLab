@@ -32,6 +32,7 @@ from app.db import repositories as repo
 from app.db.database import Database
 from app.integrations.kis.client import AccessToken, KisClient
 from app.integrations.kis.credentials import KisCredentials
+from app.integrations.kis.industry import OverseasIndustries
 from app.providers.kis import KISPortfolioProvider, MasterLookup
 
 logger = logging.getLogger("investlab.kis")
@@ -131,12 +132,15 @@ class LiveAccounts:
         master: MasterLookup,
         classification_file: Path,
         transport: httpx.AsyncBaseTransport | None = None,
+        industries: OverseasIndustries | None = None,
     ):
         self._db = db
         self._cipher = cipher
         self._master = master
         self._classification_file = classification_file
         self._transport = transport  # 테스트용 가짜 KIS
+        # 공개 업종명 표. 모든 사용자가 함께 쓴다.
+        self._industries = industries
         self._entries: dict[str, _Entry] = {}
         self._locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
@@ -159,7 +163,9 @@ class LiveAccounts:
             transport=self._transport,
             token_store=token_store,
         )
-        return KISPortfolioProvider(credentials, client, self._master, self._classification_file)
+        return KISPortfolioProvider(
+            credentials, client, self._master, self._classification_file, self._industries
+        )
 
     # --- 조회 ---
 

@@ -65,6 +65,10 @@ class FakeKis:
     # 응답을 바꾸고 싶을 때: (path) -> httpx.Response | None
     override: object = None
     token_status: int = 200
+    # 업종별코드조회 응답(거래소 → 행). 이름은 테스트용 값이다.
+    industries: dict = field(
+        default_factory=lambda: {"NAS": [{"icod": "710", "name": "테스트반도체"}]}
+    )
     calls: list = field(default_factory=list)
     seen_headers: list = field(default_factory=list)
 
@@ -136,6 +140,10 @@ class FakeKis:
                     "output3": {},
                 }
             )
+        if path.endswith("/quotations/industry-price"):
+            exchange = request.url.params["EXCD"]
+            rows = self.industries.get(exchange, [])
+            return self.ok({"output1": {"nrec": str(len(rows))}, "output2": rows})
         if path.endswith("/quotations/search-stock-info"):
             code = request.url.params["PDNO"]
             return self.ok({"output": {"scty_grp_id_cd": self.domestic_kind.get(code, "")}})
@@ -148,8 +156,16 @@ class FakeKis:
 class FakeMaster:
     """공식 마스터 파일 대신 쓰는 판별기."""
 
-    def __init__(self, kinds: dict[str, str | None] | None = None):
+    def __init__(
+        self,
+        kinds: dict[str, str | None] | None = None,
+        sectors: dict[str, tuple[str, str]] | None = None,
+    ):
         self.kinds = kinds or {"AAAA": "stock", "BBBB": "etf"}
+        self.sectors = {"AAAA": ("NAS", "710")} if sectors is None else sectors
 
     async def kind(self, exchange: str, symbol: str) -> str | None:
         return self.kinds.get(symbol)
+
+    async def sector_code(self, exchange: str, symbol: str) -> tuple[str, str] | None:
+        return self.sectors.get(symbol)

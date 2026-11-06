@@ -16,13 +16,16 @@
 | 국내 잔고 | `/uapi/domestic-stock/v1/trading/inquire-balance` | `TTTC8434R` | `INQR_DVSN=02`(종목별), 연속 조회 `CTX_AREA_FK100/NK100` |
 | 해외 잔고 | `/uapi/overseas-stock/v1/trading/inquire-present-balance` | `CTRP6504R` | 체결기준현재잔고. `WCRC_FRCR_DVSN_CD=02`, `NATN_CD=000` 한 번으로 전 국가 |
 | 국내 종목 구분 | `/uapi/domestic-stock/v1/quotations/search-stock-info` | `CTPF1002R` | `scty_grp_id_cd`: `ST` 주권, `EF` ETF |
-| 해외 종목 구분 | 공식 마스터 파일 `{nas,nys,ams,...}mst.cod.zip` | – | 증권유형 `2` 주식, `3` ETP(구분코드 `001` ETF) |
+| 해외 종목 구분 | 공식 마스터 파일 `{nas,nys,ams,...}mst.cod.zip` | – | 증권유형 `2` 주식, `3` ETP(구분코드 `001` ETF), 업종분류코드(20번째 열) |
+| 해외 업종명 | `/uapi/overseas-price/v1/quotations/industry-price` | `HHDFS76370100` | 해외주식 업종별코드조회. 거래소(`EXCD`)별 `icod` → `name` |
 
 별도의 현재가 API는 부르지 않습니다. 두 잔고 응답에 현재가·평가금액·환율이 모두 들어 있어 화면 하나당 KIS 호출은 2번(국내 종목이 있으면 종목당 1번 추가, 하루 캐시)입니다.
 
 해외 잔고는 `TTTS3012R`(해외주식 잔고) 대신 `CTRP6504R`을 씁니다. 거래소별로 나눠 부를 필요가 없고, 통화별 환율(`frst_bltn_exrt`)과 외화 예수금이 함께 오기 때문입니다.
 
-해외 ETF 구분은 API로 할 수 없습니다. 상품기본정보(`CTPF1702R`)의 `ovrs_stck_dvsn_cd`는 VOO·QQQ도 일반 주식과 같은 `01`로 줍니다. 그래서 공식 마스터 파일을 하루 한 번 받아 서버 로컬(`.cache/kis_master/`)에 두 필드만 저장합니다. 받지 못하면 "기타"로 두며 주식으로 가정하지 않습니다.
+해외 ETF 구분은 API로 할 수 없습니다. 상품기본정보(`CTPF1702R`)의 `ovrs_stck_dvsn_cd`는 VOO·QQQ도 일반 주식과 같은 `01`로 줍니다. 그래서 공식 마스터 파일을 하루 한 번 받아 서버 로컬(`.cache/kis_master/`)에 두 필드만 저장합니다(유형, ETP 구분, 업종분류코드). 받지 못하면 "기타"로 두며 주식으로 가정하지 않습니다.
+
+해외 개별주의 섹터는 마스터 파일의 업종분류코드(예: 공개 종목 AAPL `730`, JPM `610`, ETF는 `000`)를 업종별코드조회 API의 업종명으로 바꿔 씁니다. 업종명 표는 계좌와 무관한 공개 데이터라 거래소별로 하루 한 번 받아 `.cache/kis_master/`에 두고 모든 사용자가 함께 씁니다. 표를 받지 못하거나 코드가 표에 없으면 "섹터 정보 없음"으로 두며, 코드로 이름을 추측하지 않습니다. 실패한 거래소는 10분 동안 다시 부르지 않습니다.
 
 ## 필드 매핑
 
@@ -46,9 +49,9 @@
 
 ## 분류
 
-KIS는 시장지수형/섹터형 ETF, 투자 대상 국가, 섹터, 추종 지수를 주지 않습니다. 추정하지 않고 다음과 같이 둡니다.
+KIS는 시장지수형/섹터형 ETF, 투자 대상 국가, 추종 지수를 주지 않습니다. 섹터는 해외 개별주만 공식 업종명으로 채웁니다. 나머지는 추정하지 않고 다음과 같이 둡니다.
 
-- 주식: 국내 개별주 / 해외 개별주, 투자 대상 국가 = 상장 국가
+- 주식: 국내 개별주 / 해외 개별주, 투자 대상 국가 = 상장 국가, 섹터 = 해외는 KIS 업종명·국내는 없음
 - ETF: `ETF (유형 미분류)`, 투자 대상 국가·섹터·추종 지수 없음
 - 사용자가 `data/live/classifications.json`에 직접 지정하면 그 값을 씁니다. 보유 종목이 드러나므로 `.gitignore` 대상이며, 형식은 `data/live/classifications.example.json`에 있습니다.
 

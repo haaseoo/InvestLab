@@ -21,6 +21,7 @@ from app.core.errors import (
 )
 from app.integrations.kis.client import KisClient
 from app.integrations.kis.credentials import KisCredentials
+from app.integrations.kis.industry import OverseasIndustries
 from app.integrations.kis.master import classify, parse_master
 from app.integrations.kis.parse import parse_domestic, parse_overseas
 from app.main import create_app
@@ -75,12 +76,13 @@ def make_client(fake: FakeKis, tmp_path, clock=None) -> KisClient:
 CREDENTIALS = KisCredentials.parse(APP_KEY, APP_SECRET, ACCOUNT)
 
 
-def make_provider(fake: FakeKis, tmp_path, master=None) -> KISPortfolioProvider:
+def make_provider(fake: FakeKis, tmp_path, master=None, industries=None) -> KISPortfolioProvider:
     return KISPortfolioProvider(
         CREDENTIALS,
         make_client(fake, tmp_path),
         master or FakeMaster(),
         tmp_path / "classifications.json",
+        industries or OverseasIndustries(tmp_path / "industry-cache"),
     )
 
 
@@ -433,7 +435,7 @@ class TestParse:
 class TestMaster:
     def test_parse_and_classify(self):
         # 공식 마스터 파일 형식(탭 구분 24열). 값은 테스트용이다.
-        def line(symbol, stype, etyp):
+        def line(symbol, stype, etyp, sector="000"):
             cols = [
                 "US",
                 "22",
@@ -446,14 +448,21 @@ class TestMaster:
                 stype,
                 "USD",
             ]
-            cols += [""] * 12 + [etyp, ""]
+            cols += [""] * 9 + [sector, "", ""] + [etyp, ""]
             return "\t".join(cols)
 
         table = parse_master(
             "\n".join(
-                [line("STK", "2", ""), line("ETF1", "3", "001"), line("ETN1", "3", "002"), "bad"]
+                [
+                    line("STK", "2", "", "730"),
+                    line("ETF1", "3", "001"),
+                    line("ETN1", "3", "002"),
+                    "bad",
+                ]
             )
         )
+        assert table["STK"][2] == "730"
+        assert table["ETF1"][2] == "000"
         assert classify(table["STK"]) == "stock"
         assert classify(table["ETF1"]) == "etf"
         assert classify(table["ETN1"]) == "other"
@@ -461,6 +470,57 @@ class TestMaster:
 
 
 # --- Provider ---
+
+
+class TestSector:
+    async def test_overseas_stock_gets_official_industry_name(self, tmp_path):
+        fake = FakeKis()
+        holdings = {h.symbol: h for h in await make_provider(fake, tmp_path).get_holdings("KRW")}
+        assert holdings["AAAA"].sector == "테스트반도체"
+        # ETF와 국내 종목은 업종명을 붙이지 않는다
+        assert holdings["BBBB"].sector is None
+        assert holdings["005930"].sector is None
+        assert fake.count("industry-price") == 1
+
+    async def test_industry_list_shared_and_cached(self, tmp_path):
+        fake = FakeKis()
+        industries = OverseasIndustries(tmp_path / "cache")
+        await make_provider(fake, tmp_path, industries=industries).get_holdings("KRW")
+        await make_provider(fake, tmp_path, industries=industries).get_holdings("KRW")
+        # 디스크 캐시: 서버 재시작(새 인스턴스) 뒤에도 다시 부르지 않는다
+        await make_provider(
+            fake, tmp_path, industries=OverseasIndustries(tmp_path / "cache")
+        ).get_holdings("KRW")
+        assert fake.count("industry-price") == 1
+
+    async def test_unknown_code_is_unclassified_not_guessed(self, tmp_path):
+        master = FakeMaster(sectors={"AAAA": ("NAS", "999")})
+        holdings = {
+            h.symbol: h
+            for h in await make_provider(FakeKis(), tmp_path, master=master).get_holdings("KRW")
+        }
+        assert holdings["AAAA"].sector is None
+
+    async def test_industry_failure_does_not_block_holdings(self, tmp_path):
+        fake = FakeKis()
+        fake.override = lambda r: (
+            httpx.Response(200, json={"rt_cd": "1", "msg_cd": "ERR"})
+            if "industry-price" in r.url.path
+            else None
+        )
+        provider = make_provider(fake, tmp_path)
+        holdings = {h.symbol: h for h in await provider.get_holdings("KRW")}
+        assert holdings["AAAA"].sector is None
+        assert holdings["AAAA"].market_value is not None
+
+    async def test_classification_file_sector_wins(self, tmp_path):
+        (tmp_path / "classifications.json").write_text(
+            json.dumps({"holdings": {"AAAA": {"sector": "직접 지정"}}}), encoding="utf-8"
+        )
+        holdings = {
+            h.symbol: h for h in await make_provider(FakeKis(), tmp_path).get_holdings("KRW")
+        }
+        assert holdings["AAAA"].sector == "직접 지정"
 
 
 class TestProvider:

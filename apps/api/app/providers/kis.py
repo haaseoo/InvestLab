@@ -20,6 +20,7 @@ from typing import Protocol
 from app.integrations.kis.classification import Classification, load_classifications
 from app.integrations.kis.client import KisClient
 from app.integrations.kis.credentials import KisCredentials
+from app.integrations.kis.industry import OverseasIndustries
 from app.integrations.kis.master import SecurityKind
 from app.integrations.kis.parse import KisFx, KisHolding, parse_domestic, parse_overseas
 from app.providers.base import PortfolioProvider
@@ -56,6 +57,7 @@ DOMESTIC_GROUP_KIND = {"ST": SecurityKind.STOCK, "EF": SecurityKind.ETF}
 class LiveData:
     holdings: list[KisHolding]
     kinds: dict[tuple[str, str], str | None]
+    sectors: dict[tuple[str, str], str | None]
     fx: list[KisFx]
     cash: dict[str, Decimal]
     retrieved_at: datetime
@@ -71,11 +73,13 @@ class KISPortfolioProvider(PortfolioProvider):
         client: KisClient,
         master: "MasterLookup",
         classification_file: Path,
+        industries: OverseasIndustries | None = None,
     ):
         self.credentials = credentials
         self._client = client
         self._master = master
         self._classification_file = classification_file
+        self._industries = industries
         self._lock = asyncio.Lock()
         self._cached: LiveData | None = None
         self._domestic_kinds: dict[str, str | None] = {}
@@ -138,7 +142,25 @@ class KISPortfolioProvider(PortfolioProvider):
 
         holdings = domestic + foreign
         kinds = {(h.market, h.symbol): await self._kind(h) for h in holdings}
-        return LiveData(holdings, kinds, fx, cash, retrieved_at)
+        sectors = {
+            (h.market, h.symbol): await self._sector(h, kinds[(h.market, h.symbol)])
+            for h in holdings
+        }
+        return LiveData(holdings, kinds, sectors, fx, cash, retrieved_at)
+
+    async def _sector(self, h: KisHolding, kind: str | None) -> str | None:
+        """해외 개별주만. 마스터 파일의 업종분류코드 → 공식 업종명. 모르면 None."""
+        if h.domestic or kind != SecurityKind.STOCK or self._industries is None:
+            return None
+        try:
+            found = await self._master.sector_code(h.exchange_code, h.symbol)
+            if found is None:
+                return None
+            exchange, code = found
+            return await self._industries.name(self._client, exchange, code)
+        except Exception as exc:  # noqa: BLE001 - 섹터 실패가 잔고 조회를 막지 않게 한다
+            logger.warning("KIS sector lookup failed: %s", type(exc).__name__)
+            return None
 
     async def _kind(self, h: KisHolding) -> str | None:
         """판별에 실패하면 None(알 수 없음)이다. 주식으로 가정하지 않는다."""
@@ -160,7 +182,11 @@ class KISPortfolioProvider(PortfolioProvider):
         return kind
 
     def _position(
-        self, h: KisHolding, kind: str | None, overrides: dict[str, Classification]
+        self,
+        h: KisHolding,
+        kind: str | None,
+        sector: str | None,
+        overrides: dict[str, Classification],
     ) -> Position:
         if kind == SecurityKind.STOCK:
             asset_type = AssetType.STOCK
@@ -187,7 +213,8 @@ class KISPortfolioProvider(PortfolioProvider):
             exposure_country=(
                 override.exposure_country if override and override.exposure_country else exposure
             ),
-            sector=override.sector if override else None,
+            # 사용자가 분류 파일에 지정한 섹터가 KIS 업종명보다 우선한다.
+            sector=override.sector if override and override.sector else sector,
             benchmark=override.benchmark if override else None,
         )
 
@@ -220,7 +247,12 @@ class KISPortfolioProvider(PortfolioProvider):
         fx_rates = self._fx_rates(data)
         return [
             build_holding(
-                position=self._position(h, data.kinds.get((h.market, h.symbol)), overrides),
+                position=self._position(
+                    h,
+                    data.kinds.get((h.market, h.symbol)),
+                    data.sectors.get((h.market, h.symbol)),
+                    overrides,
+                ),
                 quote=self._quote(h, data),
                 fx_rates=fx_rates,
                 valuation_currency=valuation_currency,
@@ -264,6 +296,8 @@ class KISPortfolioProvider(PortfolioProvider):
 
 class MasterLookup(Protocol):
     async def kind(self, exchange: str, symbol: str) -> str | None: ...
+
+    async def sector_code(self, exchange: str, symbol: str) -> tuple[str, str] | None: ...
 
 
 def live_provider_status(

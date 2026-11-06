@@ -4,7 +4,9 @@
 공식 마스터 파일(open-trading-api/stocks_info, 해외종목코드정보.h)의 증권 유형 필드는
 1:Index 2:Stock 3:ETP(ETF) 4:Warrant이고, 구분코드는 001:ETF 002:ETN 003:ETC 004:Others다.
 
-- 파일은 하루 한 번 받아 서버 로컬(.cache)에 필요한 두 필드만 저장한다.
+- 같은 파일의 업종분류코드(20번째 열)로 섹터를 찾는다. 코드 → 업종명은 업종별코드조회 API가
+  준다(industry.py). ETF 등 업종이 없는 종목은 000이다.
+- 파일은 하루 한 번 받아 서버 로컬(.cache)에 필요한 세 필드만 저장한다.
 - 받을 수 없으면 판별하지 않는다(None). 주식으로 가정하지 않는다.
 """
 
@@ -44,6 +46,11 @@ US_MASTERS = ("nas", "nys", "ams")
 SECURITY_TYPE_ETP = "3"
 SECURITY_TYPE_STOCK = "2"
 ETP_KIND_ETF = "001"
+NO_SECTOR = "000"
+# 캐시 형식이 바뀌면 올린다(이전 형식 파일은 다시 받는다).
+CACHE_VERSION = 2
+
+Entry = tuple[str, str, str]  # (증권유형, ETP 구분코드, 업종분류코드)
 
 
 class SecurityKind:
@@ -52,23 +59,23 @@ class SecurityKind:
     OTHER = "other"
 
 
-def parse_master(text: str) -> dict[str, tuple[str, str]]:
-    """탭 구분 행 → {종목코드: (증권유형, ETP 구분코드)}"""
-    result: dict[str, tuple[str, str]] = {}
+def parse_master(text: str) -> dict[str, Entry]:
+    """탭 구분 행 → {종목코드: (증권유형, ETP 구분코드, 업종분류코드)}"""
+    result: dict[str, Entry] = {}
     for line in text.splitlines():
         cols = line.split("\t")
         if len(cols) < 23:
             continue
         symbol = cols[4].strip()
         if symbol:
-            result[symbol] = (cols[8].strip(), cols[22].strip())
+            result[symbol] = (cols[8].strip(), cols[22].strip(), cols[19].strip())
     return result
 
 
-def classify(entry: tuple[str, str] | None) -> str | None:
+def classify(entry: Entry | None) -> str | None:
     if entry is None:
         return None
-    security_type, etp_kind = entry
+    security_type, etp_kind, _ = entry
     if security_type == SECURITY_TYPE_STOCK:
         return SecurityKind.STOCK
     if security_type == SECURITY_TYPE_ETP:
@@ -80,9 +87,10 @@ class OverseasMaster:
     def __init__(self, cache_dir: Path | None, transport: httpx.AsyncBaseTransport | None = None):
         self._cache_dir = cache_dir
         self._transport = transport
-        self._tables: dict[str, tuple[str, dict[str, tuple[str, str]]]] = {}
+        self._tables: dict[str, tuple[str, dict[str, Entry]]] = {}
 
-    async def kind(self, exchange: str, symbol: str) -> str | None:
+    async def _lookup(self, exchange: str, symbol: str) -> tuple[str, Entry] | None:
+        """(종목을 찾은 마스터 코드, 항목)"""
         code = EXCHANGE_MASTER.get(exchange)
         if code is None:
             return None
@@ -91,10 +99,24 @@ class OverseasMaster:
         for c in sorted(codes, key=lambda x: x != code):
             table = await self._table(c)
             if table is not None and symbol in table:
-                return classify(table[symbol])
+                return c, table[symbol]
         return None
 
-    async def _table(self, code: str) -> dict[str, tuple[str, str]] | None:
+    async def kind(self, exchange: str, symbol: str) -> str | None:
+        found = await self._lookup(exchange, symbol)
+        return classify(found[1]) if found else None
+
+    async def sector_code(self, exchange: str, symbol: str) -> tuple[str, str] | None:
+        """(업종별코드조회에 쓸 거래소 코드, 업종분류코드). 업종이 없으면 None."""
+        found = await self._lookup(exchange, symbol)
+        if found is None:
+            return None
+        master_code, (_, _, sector) = found
+        if not sector or sector == NO_SECTOR:
+            return None
+        return master_code.upper(), sector
+
+    async def _table(self, code: str) -> dict[str, Entry] | None:
         today = datetime.now(KST).strftime("%Y%m%d")
         cached = self._tables.get(code)
         if cached and cached[0] == today:
@@ -110,9 +132,9 @@ class OverseasMaster:
         return table
 
     def _cache_file(self, code: str) -> Path | None:
-        return self._cache_dir / f"{code}.json" if self._cache_dir else None
+        return self._cache_dir / f"{code}.v{CACHE_VERSION}.json" if self._cache_dir else None
 
-    def _read_cache(self, code: str, day: str | None) -> dict[str, tuple[str, str]] | None:
+    def _read_cache(self, code: str, day: str | None) -> dict[str, Entry] | None:
         path = self._cache_file(code)
         if path is None or not path.exists():
             return None
@@ -120,11 +142,11 @@ class OverseasMaster:
             raw = json.loads(path.read_text(encoding="utf-8"))
             if day is not None and raw.get("day") != day:
                 return None
-            return {k: (v[0], v[1]) for k, v in raw["entries"].items()}
+            return {k: (v[0], v[1], v[2]) for k, v in raw["entries"].items()}
         except (OSError, ValueError, KeyError, TypeError, IndexError):
             return None
 
-    def _write_cache(self, code: str, day: str, table: dict[str, tuple[str, str]]) -> None:
+    def _write_cache(self, code: str, day: str, table: dict[str, Entry]) -> None:
         path = self._cache_file(code)
         if path is None:
             return
@@ -134,7 +156,7 @@ class OverseasMaster:
         except OSError:
             logger.warning("KIS master cache could not be written")
 
-    async def _download(self, code: str) -> dict[str, tuple[str, str]] | None:
+    async def _download(self, code: str) -> dict[str, Entry] | None:
         try:
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(20.0, connect=5.0), transport=self._transport

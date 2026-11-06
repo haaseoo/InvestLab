@@ -12,6 +12,7 @@ from app.core.crypto import CredentialCipher
 from app.core.errors import AppError, DatabaseUnavailableError
 from app.core.logging import install_log_masking
 from app.db.database import Database
+from app.integrations.kis.industry import OverseasIndustries
 from app.integrations.kis.master import OverseasMaster
 from app.providers.mock import MockPortfolioProvider
 from app.routers import account, analytics, kis, portfolio, simulations, snapshots
@@ -58,6 +59,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ),
         master=OverseasMaster(settings.kis_master_cache_dir),
         classification_file=settings.live_classification_file,
+        industries=OverseasIndustries(settings.kis_master_cache_dir),
     )
 
     app.add_middleware(
