@@ -20,8 +20,9 @@ from typing import Protocol
 from app.integrations.kis.classification import Classification, load_classifications
 from app.integrations.kis.client import KisClient
 from app.integrations.kis.credentials import KisCredentials
+from app.integrations.kis.gics import SYMBOL_SECTOR, sector_for_industry
 from app.integrations.kis.industry import OverseasIndustries
-from app.integrations.kis.master import SecurityKind
+from app.integrations.kis.master import EXCHANGE_MASTER, US_MASTERS, SecurityKind
 from app.integrations.kis.parse import KisFx, KisHolding, parse_domestic, parse_overseas
 from app.providers.base import PortfolioProvider
 from app.schemas.analysis import EtfComposition
@@ -149,15 +150,19 @@ class KISPortfolioProvider(PortfolioProvider):
         return LiveData(holdings, kinds, sectors, fx, cash, retrieved_at)
 
     async def _sector(self, h: KisHolding, kind: str | None) -> str | None:
-        """해외 개별주만. 마스터 파일의 업종분류코드 → 공식 업종명. 모르면 None."""
-        if h.domestic or kind != SecurityKind.STOCK or self._industries is None:
+        """해외 개별주만. 마스터 파일의 업종분류코드 → KIS 업종명 → GICS 섹터. 모르면 None."""
+        if h.domestic or kind != SecurityKind.STOCK:
+            return None
+        if EXCHANGE_MASTER.get(h.exchange_code) in US_MASTERS and h.symbol in SYMBOL_SECTOR:
+            return SYMBOL_SECTOR[h.symbol]
+        if self._industries is None:
             return None
         try:
             found = await self._master.sector_code(h.exchange_code, h.symbol)
             if found is None:
                 return None
             exchange, code = found
-            return await self._industries.name(self._client, exchange, code)
+            return sector_for_industry(await self._industries.name(self._client, exchange, code))
         except Exception as exc:  # noqa: BLE001 - 섹터 실패가 잔고 조회를 막지 않게 한다
             logger.warning("KIS sector lookup failed: %s", type(exc).__name__)
             return None

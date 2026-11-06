@@ -21,6 +21,7 @@ from app.core.errors import (
 )
 from app.integrations.kis.client import KisClient
 from app.integrations.kis.credentials import KisCredentials
+from app.integrations.kis.gics import sector_for_industry
 from app.integrations.kis.industry import OverseasIndustries
 from app.integrations.kis.master import classify, parse_master
 from app.integrations.kis.parse import parse_domestic, parse_overseas
@@ -473,10 +474,11 @@ class TestMaster:
 
 
 class TestSector:
-    async def test_overseas_stock_gets_official_industry_name(self, tmp_path):
+    async def test_overseas_stock_gets_gics_sector(self, tmp_path):
         fake = FakeKis()
         holdings = {h.symbol: h for h in await make_provider(fake, tmp_path).get_holdings("KRW")}
-        assert holdings["AAAA"].sector == "테스트반도체"
+        # KIS 업종명 '반도체 및 반도체장비' → GICS '정보기술 (Information Technology)'
+        assert holdings["AAAA"].sector == "정보기술 (Information Technology)"
         # ETF와 국내 종목은 업종명을 붙이지 않는다
         assert holdings["BBBB"].sector is None
         assert holdings["005930"].sector is None
@@ -499,6 +501,19 @@ class TestSector:
             h.symbol: h
             for h in await make_provider(FakeKis(), tmp_path, master=master).get_holdings("KRW")
         }
+        assert holdings["AAAA"].sector is None
+
+    def test_industry_names_map_to_gics(self):
+        assert sector_for_industry("미디어") == "커뮤니케이션 서비스 (Communication Services)"
+        assert sector_for_industry("도/소매") == "임의소비재 (Consumer Discretionary)"
+        assert sector_for_industry("음식료 도매") == "필수소비재 (Consumer Staples)"
+        assert sector_for_industry("REIT's 및 부동산관리개발") == "부동산 (Real Estate)"
+        assert sector_for_industry("모르는 업종") is None
+        assert sector_for_industry(None) is None
+
+    async def test_unmapped_industry_name_is_unclassified(self, tmp_path):
+        fake = FakeKis(industries={"NAS": [{"icod": "710", "name": "새 업종"}]})
+        holdings = {h.symbol: h for h in await make_provider(fake, tmp_path).get_holdings("KRW")}
         assert holdings["AAAA"].sector is None
 
     async def test_industry_failure_does_not_block_holdings(self, tmp_path):

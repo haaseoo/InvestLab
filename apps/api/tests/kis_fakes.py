@@ -67,7 +67,7 @@ class FakeKis:
     token_status: int = 200
     # 업종별코드조회 응답(거래소 → 행). 이름은 테스트용 값이다.
     industries: dict = field(
-        default_factory=lambda: {"NAS": [{"icod": "710", "name": "테스트반도체"}]}
+        default_factory=lambda: {"NAS": [{"icod": "710", "name": "반도체 및 반도체장비"}]}
     )
     calls: list = field(default_factory=list)
     seen_headers: list = field(default_factory=list)
