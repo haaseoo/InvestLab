@@ -6,9 +6,10 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.errors import KisNotConfiguredError
 from app.core.logging import install_log_masking
 from app.main import create_app
-from tests.conftest import make_settings
+from tests.conftest import FakeLiveAccounts, make_settings
 from tests.jwt_helpers import OTHER_ID, OWNER_ID, SUPABASE_URL, JwksServer, KeyPair
 
 LIVE_GET = [
@@ -26,7 +27,7 @@ def key():
 
 @pytest.fixture
 def client(key):
-    app = create_app(make_settings(supabase_url=SUPABASE_URL, live_owner_user_id=OWNER_ID))
+    app = create_app(make_settings(supabase_url=SUPABASE_URL))
     app.state.token_verifier = JwksServer(key).verifier()
     return TestClient(app)
 
@@ -43,18 +44,26 @@ class TestLive:
         assert r.json()["error"]["code"] == "AUTH_REQUIRED"
 
     @pytest.mark.parametrize("path", LIVE_GET)
-    def test_owner_reaches_provider_and_gets_not_configured(self, client, key, path):
+    def test_logged_in_user_reaches_key_store_and_gets_error(self, client, key, path):
         r = client.get(path, params={"source": "live"}, headers=auth(key.sign()))
         assert r.status_code == 503
-        assert r.json()["error"]["code"] in {"KIS_NOT_CONFIGURED", "DB_NOT_CONFIGURED"}
+        assert r.json()["error"]["code"] == "DB_NOT_CONFIGURED"
         assert "VOO" not in r.text  # Mock으로 대체하지 않는다
 
-    def test_non_owner_403(self, client, key):
+    def test_keys_are_looked_up_by_token_subject(self, client, key):
+        seen = []
+
+        class Recording(FakeLiveAccounts):
+            async def provider_for(self, user):
+                seen.append(user.id)
+                raise KisNotConfiguredError()
+
+        client.app.state.live_accounts = Recording()
         r = client.get(
             "/api/v1/portfolio", params={"source": "live"}, headers=auth(key.sign(sub=OTHER_ID))
         )
-        assert r.status_code == 403
-        assert r.json()["error"]["code"] == "LIVE_FORBIDDEN"
+        assert r.status_code == 409
+        assert seen == [OTHER_ID]
 
     def test_expired_401(self, client, key):
         token = key.sign(exp=int(time.time()) - 3600)
@@ -84,13 +93,8 @@ class TestAccount:
         assert body == {
             "user_id": OWNER_ID,
             "email": "owner@example.com",
-            "is_live_owner": True,
             "database_available": False,
         }
-
-    def test_me_other_user_not_owner(self, client, key):
-        body = client.get("/api/v1/me", headers=auth(key.sign(sub=OTHER_ID))).json()
-        assert body["is_live_owner"] is False
 
     @pytest.mark.parametrize(
         ("method", "path"),
@@ -101,6 +105,9 @@ class TestAccount:
             ("get", "/api/v1/snapshots"),
             ("post", "/api/v1/snapshots?source=live"),
             ("get", "/api/v1/simulations/history"),
+            ("get", "/api/v1/kis/credentials"),
+            ("put", "/api/v1/kis/credentials"),
+            ("delete", "/api/v1/kis/credentials"),
         ],
     )
     def test_user_endpoints_require_login(self, client, method, path):
@@ -135,9 +142,8 @@ class TestAccount:
         )
         checks = {c["key"]: c["ok"] for c in live["checks"]}
         assert checks["auth"] is True
-        assert checks["owner"] is True
         assert checks["database"] is False
-        assert checks["kis_credentials"] is False
+        assert checks["credential_store"] is False
         assert live["state"] == "not_configured"
 
 

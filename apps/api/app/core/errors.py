@@ -26,28 +26,36 @@ class InvalidTokenError(AppError):
     message = "인증 토큰이 유효하지 않습니다."
 
 
-class LiveForbiddenError(AppError):
-    status_code = 403
-    code = "LIVE_FORBIDDEN"
-    message = "이 계정은 연결된 증권 계좌를 조회할 권한이 없습니다."
-
-
 class AuthNotConfiguredError(AppError):
     status_code = 503
     code = "AUTH_NOT_CONFIGURED"
     message = "사용자 인증이 아직 구성되지 않아 LIVE 데이터를 조회할 수 없습니다."
 
 
-class LiveOwnerNotConfiguredError(AppError):
-    status_code = 503
-    code = "LIVE_OWNER_NOT_CONFIGURED"
-    message = "LIVE 계좌 소유자가 지정되지 않아 LIVE 데이터를 조회할 수 없습니다."
-
-
 class KisNotConfiguredError(AppError):
-    status_code = 503
+    status_code = 409
     code = "KIS_NOT_CONFIGURED"
-    message = "한국투자증권 App Key·Secret 또는 계좌번호가 설정되지 않았습니다."
+    message = (
+        "한국투자증권 키가 등록되지 않았습니다. 설정에서 App Key·Secret·계좌번호를 등록해 주세요."
+    )
+
+
+class KisCredentialStoreNotConfiguredError(AppError):
+    status_code = 503
+    code = "KIS_CREDENTIAL_STORE_NOT_CONFIGURED"
+    message = "서버에 키 암호화 설정(KIS_CREDENTIAL_KEY)이 없어 한국투자증권 키를 저장·사용할 수 없습니다."
+
+
+class KisCredentialsUnreadableError(AppError):
+    status_code = 409
+    code = "KIS_CREDENTIALS_UNREADABLE"
+    message = "저장된 한국투자증권 키를 읽을 수 없습니다. 설정에서 다시 등록해 주세요."
+
+
+class KisCredentialsInputError(AppError):
+    status_code = 422
+    code = "INVALID_KIS_CREDENTIALS"
+    message = "한국투자증권 키 입력값이 올바르지 않습니다."
 
 
 class KisAuthError(AppError):

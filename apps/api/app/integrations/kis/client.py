@@ -1,8 +1,9 @@
 """한국투자증권 Open API 클라이언트(조회 전용).
 
 - 조회(GET)와 토큰 발급(POST /oauth2/tokenP)만 한다. 주문 API 경로는 호출할 수 없게 막는다.
-- 접근 토큰은 메모리와 서버 로컬 파일(권한 600)에 캐시한다. 공식 안내상 토큰은 1일 유효하고
-  재발급은 1분당 1회로 제한되며, 발급할 때마다 알림톡이 간다. 그래서 서버 재시작 때도 재사용한다.
+- 접근 토큰은 메모리와 TokenStore에 캐시한다. 공식 안내상 토큰은 1일 유효하고 재발급은 1분당
+  1회로 제한되며, 발급할 때마다 알림톡이 간다. 그래서 서버 재시작 때도 재사용한다.
+  운영에서는 사용자별로 DB에 암호화해 두고(services/live_accounts.py), 테스트는 파일을 쓴다.
 - App Key·Secret·토큰·계좌번호는 로그, 예외 메시지, 응답 어디에도 싣지 않는다.
   KIS 오류는 msg_cd(오류 코드)만 전달한다.
 """
@@ -17,7 +18,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import httpx
 
@@ -75,14 +76,24 @@ class AccessToken:
         return self.expires_at - TOKEN_EXPIRY_MARGIN > now
 
 
-class TokenStore:
-    """토큰 파일 캐시. 파일이 깨졌거나 다른 키의 토큰이면 없는 것으로 본다."""
+class TokenStore(Protocol):
+    """토큰 영구 캐시. 읽지 못하면 None을 돌려주고, 저장 실패가 조회를 막지 않게 한다."""
+
+    async def load(self) -> AccessToken | None: ...
+
+    async def save(self, token: AccessToken) -> None: ...
+
+    async def clear(self) -> None: ...
+
+
+class FileTokenStore:
+    """토큰 파일 캐시(권한 600). 파일이 깨졌거나 다른 키의 토큰이면 없는 것으로 본다."""
 
     def __init__(self, path: Path | None, fingerprint: str):
         self._path = path
         self._fingerprint = fingerprint
 
-    def load(self) -> AccessToken | None:
+    async def load(self) -> AccessToken | None:
         if self._path is None or not self._path.exists():
             return None
         try:
@@ -95,7 +106,7 @@ class TokenStore:
         except (OSError, ValueError, KeyError, TypeError):
             return None
 
-    def save(self, token: AccessToken) -> None:
+    async def save(self, token: AccessToken) -> None:
         if self._path is None:
             return
         try:
@@ -115,7 +126,7 @@ class TokenStore:
         except OSError:
             logger.warning("KIS token cache could not be written")
 
-    def clear(self) -> None:
+    async def clear(self) -> None:
         if self._path is not None:
             try:
                 self._path.unlink(missing_ok=True)
@@ -140,13 +151,16 @@ class KisClient:
         timeout: httpx.Timeout | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         clock: Callable[[], float] = time.monotonic,
+        token_store: TokenStore | None = None,
     ):
         if not app_key or not app_secret:
             raise KisNotConfiguredError()
         self._app_key = app_key
         self._app_secret = app_secret
         self._base_url = base_url
-        self._store = TokenStore(token_cache_path, _key_fingerprint(app_key))
+        self._store: TokenStore = token_store or FileTokenStore(
+            token_cache_path, _key_fingerprint(app_key)
+        )
         self._transport = transport
         self._timeout = timeout or httpx.Timeout(10.0, connect=5.0)
         self._sleep = sleep
@@ -168,18 +182,18 @@ class KisClient:
         async with self._token_lock:
             now = datetime.now(UTC)
             if self._token is None or not self._token.usable(now):
-                cached = self._store.load()
+                cached = await self._store.load()
                 self._token = cached if cached and cached.usable(now) else None
             if self._token is None:
                 self._token = await self._issue_token()
-                self._store.save(self._token)
+                await self._store.save(self._token)
             return self._token.value
 
     async def _invalidate_token(self, rejected: str) -> None:
         async with self._token_lock:
             if self._token is not None and self._token.value == rejected:
                 self._token = None
-                self._store.clear()
+                await self._store.clear()
 
     async def _issue_token(self) -> AccessToken:
         now = self._clock()

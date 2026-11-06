@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import REPO_ROOT, Settings
-from app.core.errors import InvalidTokenError
+from app.core.errors import InvalidTokenError, KisNotConfiguredError
 from app.core.security import AuthenticatedUser
 from app.main import create_app
 
@@ -22,6 +22,21 @@ class FakeVerifier:
         raise InvalidTokenError()
 
 
+class FakeLiveAccounts:
+    """사용자 id → Provider. 등록하지 않은 사용자는 키가 없는 것으로 본다."""
+
+    store_available = True
+
+    def __init__(self, providers: dict | None = None):
+        self.providers = providers or {}
+
+    async def provider_for(self, user: AuthenticatedUser):
+        provider = self.providers.get(user.id)
+        if provider is None:
+            raise KisNotConfiguredError()
+        return provider
+
+
 def make_settings(**overrides) -> Settings:
     # 개발자의 .env가 테스트에 섞이지 않게 한다.
     return Settings(_env_file=None, **overrides)
@@ -34,9 +49,10 @@ def client() -> TestClient:
 
 @pytest.fixture
 def live_client() -> TestClient:
-    """Phase 3 이후처럼 토큰 검증기와 소유자가 구성된 앱."""
-    app = create_app(make_settings(live_owner_user_id=OWNER_ID))
+    """토큰 검증기가 구성되고, 아직 아무도 KIS 키를 등록하지 않은 앱."""
+    app = create_app(make_settings())
     app.state.token_verifier = FakeVerifier()
+    app.state.live_accounts = FakeLiveAccounts()
     return TestClient(app, raise_server_exceptions=False)
 
 

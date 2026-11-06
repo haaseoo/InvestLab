@@ -41,3 +41,12 @@ export function useSimulationHistory() {
     enabled: userId !== null,
   });
 }
+
+export function useKisCredentials() {
+  const userId = useUserId();
+  return useQuery({
+    queryKey: ["kis-credentials", userId],
+    queryFn: ({ signal }) => api.kisCredentials(signal),
+    enabled: userId !== null,
+  });
+}

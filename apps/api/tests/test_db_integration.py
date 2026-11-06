@@ -10,6 +10,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from decimal import Decimal as D
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -17,6 +18,7 @@ from sqlalchemy import Connection, create_engine, text
 from sqlalchemy.exc import DBAPIError, IntegrityError, ProgrammingError
 
 from app.core.config import Settings
+from app.core.crypto import CredentialCipher, generate_key
 from app.core.errors import NotFoundError, SnapshotExistsError
 from app.core.security import AuthenticatedUser
 from app.db import repositories as repo
@@ -34,12 +36,21 @@ from app.schemas.portfolio import (
     Source,
 )
 from app.schemas.user_data import SimulationHistoryCreate, UserSettings
+from app.services.live_accounts import LiveAccounts
 from app.services.snapshots import build_snapshot_record
 from app.services.valuation import build_holding
+from tests.conftest import FakeLiveAccounts
+from tests.kis_fakes import FakeKis, FakeMaster
 
 pytestmark = pytest.mark.integration
 
-SETTINGS = Settings()  # 루트 .env를 읽는다
+
+class IntegrationSettings(Settings):
+    # 실제 Supabase에 이미 있는 사용자 UID. 이 사용자 권한으로 RLS를 확인한다.
+    live_owner_user_id: str | None = None
+
+
+SETTINGS = IntegrationSettings()  # 루트 .env를 읽는다
 if SETTINGS.database_url is None or SETTINGS.live_owner_user_id is None:
     pytest.skip(
         "DATABASE_URL·LIVE_OWNER_USER_ID가 없어 DB 통합 테스트를 건너뜁니다.",
@@ -55,6 +66,7 @@ TABLES = [
     "holding_snapshots",
     "ai_reports",
     "simulation_history",
+    "kis_credentials",
 ]
 
 
@@ -255,7 +267,7 @@ class TestSchema:
             .scalars()
             .all()
         )
-        assert "20261102120000" in versions
+        assert {"20261102120000", "20261106120000"} <= set(versions)
 
     def test_owner_has_default_rows(self, conn):
         with as_(conn, OWNER):
@@ -293,7 +305,10 @@ class TestRls:
             assert holdings == 0
 
     def test_other_user_cannot_delete_or_update_owner_rows(self, conn):
+        # 실제 계정에 이미 저장된 데이터가 있을 수 있으므로 테스트 전 상태를 기준으로 비교한다.
         with as_(conn, OWNER):
+            before_count = len(repo.list_snapshots(conn, 100))
+            before_source = repo.get_settings(conn).preferred_source
             snapshot_id = repo.insert_snapshot(conn, record())
         other = make_user(conn)
         with as_(conn, other):
@@ -308,8 +323,41 @@ class TestRls:
             ).all()
             assert updated == []
         with as_(conn, OWNER):
-            assert len(repo.list_snapshots(conn, 10)) == 1
-            assert repo.get_settings(conn).preferred_source == "mock"
+            assert len(repo.list_snapshots(conn, 100)) == before_count + 1
+            assert repo.get_settings(conn).preferred_source == before_source
+
+    def test_kis_credentials_are_private(self, conn):
+        with as_(conn, OWNER):
+            repo.put_kis_credentials(conn, b"\x01" + b"x" * 40, "********01", None, None)
+        other = make_user(conn)
+        with as_(conn, other):
+            assert repo.get_kis_credentials(conn) is None
+            assert (
+                conn.execute(text("select count(*) from public.kis_credentials")).scalar_one() == 0
+            )
+            assert repo.delete_kis_credentials(conn) is False
+            updated = conn.execute(
+                text(
+                    "update public.kis_credentials set account_masked = '********99' "
+                    "where user_id = cast(:id as uuid) returning user_id"
+                ),
+                {"id": OWNER.id},
+            ).all()
+            assert updated == []
+        with as_(conn, OWNER):
+            row = repo.get_kis_credentials(conn)
+            assert row is not None and row.account_masked == "********01"
+
+    def test_cannot_insert_kis_credentials_for_another_user(self, conn):
+        other = make_user(conn)
+        with pytest.raises(ProgrammingError, match="row-level security"), as_(conn, other):
+            conn.execute(
+                text(
+                    "insert into public.kis_credentials (user_id, credentials_enc, account_masked) "
+                    "values (cast(:id as uuid), :c, '********01')"
+                ),
+                {"id": OWNER.id, "c": b"\x01" + b"x" * 40},
+            )
 
     def test_cannot_insert_rows_for_another_user(self, conn):
         other = make_user(conn)
@@ -449,16 +497,21 @@ class FakeVerifier:
 
 @pytest.fixture
 def api(conn):
+    # API 테스트는 트랜잭션 안에서만 존재하는 사용자 둘로 한다. 실제 계정의 저장 데이터와 섞이지 않는다.
+    owner = make_user(conn)
     other = make_user(conn)
-    app = create_app(
-        Settings(
-            _env_file=None,
-            supabase_url="https://example.supabase.co",
-            live_owner_user_id=OWNER.id,
-        )
-    )
-    app.state.token_verifier = FakeVerifier({"owner": OWNER, "other": other})
+    app = create_app(Settings(_env_file=None, supabase_url="https://example.supabase.co"))
+    app.state.token_verifier = FakeVerifier({"owner": owner, "other": other})
+    app.state.test_owner = owner
     app.state.db = RollbackDatabase(conn)
+    app.state.kis = FakeKis()
+    app.state.live_accounts = LiveAccounts(
+        db=app.state.db,
+        cipher=CredentialCipher(generate_key()),
+        master=FakeMaster(),
+        classification_file=Path("/nonexistent/classifications.json"),
+        transport=app.state.kis.transport(),
+    )
     return TestClient(app)
 
 
@@ -490,7 +543,7 @@ class TestApiWithDb:
 
     def test_kis_not_connected_saves_nothing(self, api):
         r = api.post("/api/v1/snapshots", params={"source": "live"}, headers=h("owner"))
-        assert r.status_code == 503
+        assert r.status_code == 409
         assert r.json()["error"]["code"] == "KIS_NOT_CONFIGURED"
         assert api.get("/api/v1/snapshots", headers=h("owner")).json()["snapshots"] == []
 
@@ -500,7 +553,9 @@ class TestApiWithDb:
         assert api.get("/api/v1/snapshots", headers=h("owner")).json()["snapshots"] == []
 
     def test_live_snapshot_with_connected_provider(self, api):
-        api.app.state.providers[Source.LIVE] = FakeLiveProvider()
+        api.app.state.live_accounts = FakeLiveAccounts(
+            {api.app.state.test_owner.id: FakeLiveProvider()}
+        )
         r = api.post("/api/v1/snapshots", params={"source": "live"}, headers=h("owner"))
         assert r.status_code == 201
         body = r.json()
@@ -516,29 +571,31 @@ class TestApiWithDb:
         assert api.delete(f"/api/v1/snapshots/{body['id']}", headers=h("other")).status_code == 404
         assert api.delete(f"/api/v1/snapshots/{body['id']}", headers=h("owner")).status_code == 204
 
-    def test_kis_snapshot_feeds_live_history(self, api, tmp_path):
-        """KIS Provider(가짜 전송 계층) → 스냅샷 저장 → LIVE 이력 차트."""
-        from app.providers.kis import KISPortfolioProvider
-        from tests.kis_fakes import ACCOUNT, APP_KEY, APP_SECRET, FakeKis, FakeMaster
+    def test_kis_keys_register_and_feed_live_history(self, api, conn):
+        """키 등록(실제 SQL·암호화) → KIS 조회(가짜 전송 계층) → 스냅샷 → LIVE 이력."""
+        from tests.kis_fakes import ACCOUNT, APP_KEY, APP_SECRET, TOKEN
 
-        fake = FakeKis()
-        settings = Settings(
-            _env_file=None,
-            kis_app_key=APP_KEY,
-            kis_app_secret=APP_SECRET,
-            kis_account_no=ACCOUNT,
-            kis_token_cache_path=tmp_path / "token.json",
-            live_classification_file=tmp_path / "none.json",
-        )
-        from app.integrations.kis.client import KisClient
-
-        api.app.state.providers[Source.LIVE] = KISPortfolioProvider(
-            settings,
-            client=KisClient(
-                APP_KEY, APP_SECRET, tmp_path / "token.json", transport=fake.transport()
+        body = {"app_key": APP_KEY, "app_secret": APP_SECRET, "account_no": ACCOUNT}
+        r = api.put("/api/v1/kis/credentials", headers=h("owner"), json=body)
+        assert r.status_code == 200, r.text
+        assert r.json()["account_masked"] == "********01"
+        # DB에는 암호문만 있다
+        stored = conn.execute(
+            text(
+                "select credentials_enc, token_enc from public.kis_credentials "
+                "where user_id = cast(:id as uuid)"
             ),
-            master=FakeMaster(),
-        )
+            {"id": api.app.state.test_owner.id},
+        ).one()
+        blob = bytes(stored[0]) + bytes(stored[1])
+        for secret in (APP_KEY, APP_SECRET, TOKEN, "12345678"):
+            assert secret.encode() not in blob
+
+        # 다른 사용자는 소유자의 키 행을 볼 수 없고, 키가 없으므로 LIVE도 조회할 수 없다
+        assert api.get("/api/v1/kis/credentials", headers=h("other")).json()["registered"] is False
+        other = api.get("/api/v1/portfolio/history", params={"source": "live"}, headers=h("other"))
+        assert other.status_code == 409
+
         assert (
             api.get(
                 "/api/v1/portfolio/history", params={"source": "live"}, headers=h("owner")
@@ -552,14 +609,19 @@ class TestApiWithDb:
             "/api/v1/portfolio/history", params={"source": "live"}, headers=h("owner")
         ).json()["points"]
         assert len(points) == 1 and D(points[0]["total_market_value"]) == D(1310000)
-        # 다른 사용자는 LIVE 이력 자체에 접근할 수 없다
-        other = api.get("/api/v1/portfolio/history", params={"source": "live"}, headers=h("other"))
-        assert other.status_code == 403
+        # 등록 때 발급한 토큰을 계속 쓴다
+        assert api.app.state.kis.count("/oauth2/tokenP") == 1
 
-    def test_non_owner_cannot_capture_live(self, api):
-        api.app.state.providers[Source.LIVE] = FakeLiveProvider()
+        assert api.delete("/api/v1/kis/credentials", headers=h("owner")).status_code == 204
+        r = api.get("/api/v1/portfolio", params={"source": "live"}, headers=h("owner"))
+        assert r.status_code == 409
+
+    def test_user_without_keys_cannot_capture_live(self, api):
+        api.app.state.live_accounts = FakeLiveAccounts(
+            {api.app.state.test_owner.id: FakeLiveProvider()}
+        )
         r = api.post("/api/v1/snapshots", params={"source": "live"}, headers=h("other"))
-        assert r.status_code == 403
+        assert r.status_code == 409
 
     def test_simulation_history_api(self, api):
         body = {"simulation_type": "buy", "source": "mock", "input": {"q": "1"}, "result": {"r": 1}}
@@ -568,7 +630,7 @@ class TestApiWithDb:
         live = api.post(
             "/api/v1/simulations/history", headers=h("other"), json={**body, "source": "live"}
         )
-        assert live.status_code == 403
+        assert live.status_code == 409
         assert len(api.get("/api/v1/simulations/history", headers=h("owner")).json()["items"]) == 1
         assert api.get("/api/v1/simulations/history", headers=h("other")).json()["items"] == []
 

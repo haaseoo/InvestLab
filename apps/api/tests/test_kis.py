@@ -13,18 +13,20 @@ from fastapi.testclient import TestClient
 from app.core.errors import (
     KisApiError,
     KisAuthError,
+    KisCredentialsInputError,
     KisNotConfiguredError,
     KisRateLimitedError,
     KisResponseError,
     KisUnavailableError,
 )
 from app.integrations.kis.client import KisClient
+from app.integrations.kis.credentials import KisCredentials
 from app.integrations.kis.master import classify, parse_master
 from app.integrations.kis.parse import parse_domestic, parse_overseas
 from app.main import create_app
-from app.providers.kis import KISPortfolioProvider, parse_account
+from app.providers.kis import KISPortfolioProvider, live_provider_status
 from app.schemas.portfolio import AssetClass, AssetType, Source, ValuationStatus
-from tests.conftest import OWNER_ID, FakeVerifier, make_settings
+from tests.conftest import OWNER_ID, FakeLiveAccounts, FakeVerifier, make_settings
 from tests.kis_fakes import (
     ACCOUNT,
     APP_KEY,
@@ -70,23 +72,15 @@ def make_client(fake: FakeKis, tmp_path, clock=None) -> KisClient:
     )
 
 
-def settings(tmp_path, **over):
-    return make_settings(
-        kis_app_key=APP_KEY,
-        kis_app_secret=APP_SECRET,
-        kis_account_no=ACCOUNT,
-        kis_token_cache_path=tmp_path / "token.json",
-        live_classification_file=tmp_path / "classifications.json",
-        **over,
-    )
+CREDENTIALS = KisCredentials.parse(APP_KEY, APP_SECRET, ACCOUNT)
 
 
-def make_provider(fake: FakeKis, tmp_path, master=None, **over) -> KISPortfolioProvider:
+def make_provider(fake: FakeKis, tmp_path, master=None) -> KISPortfolioProvider:
     return KISPortfolioProvider(
-        settings(tmp_path, **over),
-        auth_available=True,
-        client=make_client(fake, tmp_path),
-        master=master or FakeMaster(),
+        CREDENTIALS,
+        make_client(fake, tmp_path),
+        master or FakeMaster(),
+        tmp_path / "classifications.json",
     )
 
 
@@ -419,10 +413,21 @@ class TestParse:
             parse_domestic([{"output1": [domestic_row(hldg_qty="abc")], "output2": []}])
 
     def test_account_format(self):
-        assert parse_account("12345678-01") == ("12345678", "01")
-        assert parse_account("1234567801") == ("12345678", "01")
-        with pytest.raises(KisNotConfiguredError):
-            parse_account("1234-5678")
+        c = KisCredentials.parse(APP_KEY, APP_SECRET, "12345678-01")
+        assert (c.cano, c.product) == ("12345678", "01")
+        c = KisCredentials.parse(f" {APP_KEY} ", APP_SECRET, "1234567801")
+        assert (c.app_key, c.cano, c.product) == (APP_KEY, "12345678", "01")
+        with pytest.raises(KisCredentialsInputError) as exc:
+            KisCredentials.parse("short", "bad secret!", "1234-5678")
+        assert len(exc.value.details["reasons"]) == 3
+        # 실패 사유에 입력값을 싣지 않는다
+        assert "short" not in str(exc.value.details) and "1234-5678" not in str(exc.value.details)
+
+    def test_credentials_never_in_repr(self):
+        text = repr(CREDENTIALS) + str(CREDENTIALS)
+        for secret in (APP_KEY, APP_SECRET, "12345678"):
+            assert secret not in text
+        assert "01" in text
 
 
 class TestMaster:
@@ -552,17 +557,10 @@ class TestProvider:
         assert summary.account_masked == "********01"
         assert summary.cash_balances == {"USD": D("12.34"), "KRW": D(500000)}
 
-    async def test_not_configured(self, tmp_path):
-        provider = KISPortfolioProvider(make_settings())
-        with pytest.raises(KisNotConfiguredError):
-            await provider.get_holdings("KRW")
-        assert provider.get_provider_status().state == "not_configured"
-
-    def test_status_ready(self, tmp_path):
-        provider = make_provider(FakeKis(), tmp_path, live_owner_user_id=OWNER_ID)
-        status = provider.get_provider_status()
+    def test_server_status_has_no_user_values(self):
+        status = live_provider_status(True, True, True)
         assert status.state == "ready"
-        assert ACCOUNT not in status.model_dump_json() and APP_KEY not in status.model_dump_json()
+        assert live_provider_status(True, True, False).state != "ready"
 
 
 # --- API ---
@@ -571,9 +569,9 @@ class TestProvider:
 @pytest.fixture
 def live_api(tmp_path):
     fake = FakeKis()
-    app = create_app(make_settings(live_owner_user_id=OWNER_ID))
+    app = create_app(make_settings())
     app.state.token_verifier = FakeVerifier()
-    app.state.providers[Source.LIVE] = make_provider(fake, tmp_path, live_owner_user_id=OWNER_ID)
+    app.state.live_accounts = FakeLiveAccounts({OWNER_ID: make_provider(fake, tmp_path)})
     return TestClient(app, raise_server_exceptions=False), fake
 
 
@@ -582,7 +580,7 @@ def bearer(token):
 
 
 class TestLiveApi:
-    def test_owner_gets_live_portfolio(self, live_api):
+    def test_user_gets_own_live_portfolio(self, live_api):
         api, _ = live_api
         r = api.get("/api/v1/portfolio", params={"source": "live"}, headers=bearer("owner-token"))
         assert r.status_code == 200
@@ -595,10 +593,10 @@ class TestLiveApi:
         for secret in (APP_KEY, APP_SECRET, TOKEN, "12345678"):
             assert secret not in r.text
 
-    def test_non_owner_never_reaches_kis(self, live_api):
+    def test_user_without_keys_never_reaches_kis(self, live_api):
         api, fake = live_api
         r = api.get("/api/v1/portfolio", params={"source": "live"}, headers=bearer("other-token"))
-        assert r.status_code == 403
+        assert r.status_code == 409
         r = api.get("/api/v1/portfolio", params={"source": "live"})
         assert r.status_code == 401
         assert fake.calls == []

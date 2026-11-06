@@ -3,8 +3,20 @@ import type { DecimalString, Source } from "@/types/portfolio";
 export interface Me {
   user_id: string;
   email: string | null;
-  is_live_owner: boolean;
   database_available: boolean;
+}
+
+/** 본인 한국투자증권 키 등록 상태. 키 자체는 서버가 다시 내보내지 않는다. */
+export interface KisCredentialsStatus {
+  registered: boolean;
+  account_masked: string | null;
+  updated_at: string | null;
+}
+
+export interface KisCredentialsInput {
+  app_key: string;
+  app_secret: string;
+  account_no: string;
 }
 
 export interface UserSettings {

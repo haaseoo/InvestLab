@@ -8,13 +8,14 @@ from sqlalchemy.exc import DBAPIError
 
 from app.core.auth import SupabaseTokenVerifier
 from app.core.config import Settings, get_settings
+from app.core.crypto import CredentialCipher
 from app.core.errors import AppError, DatabaseUnavailableError
 from app.core.logging import install_log_masking
 from app.db.database import Database
-from app.providers.kis import KISPortfolioProvider
+from app.integrations.kis.master import OverseasMaster
 from app.providers.mock import MockPortfolioProvider
-from app.routers import account, analytics, portfolio, simulations, snapshots
-from app.schemas.portfolio import Source
+from app.routers import account, analytics, kis, portfolio, simulations, snapshots
+from app.services.live_accounts import LiveAccounts
 
 logger = logging.getLogger("investlab")
 
@@ -46,14 +47,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.db = (
         Database(settings.database_url.get_secret_value()) if settings.database_url else None
     )
-    app.state.providers = {
-        Source.MOCK: MockPortfolioProvider(settings.mock_data_dir),
-        Source.LIVE: KISPortfolioProvider(
-            settings,
-            auth_available=app.state.token_verifier is not None,
-            database_available=app.state.db is not None,
+    app.state.mock_provider = MockPortfolioProvider(settings.mock_data_dir)
+    # LIVE는 사용자마다 본인 키로 만든 Provider를 쓴다. 키 형식이 잘못됐으면 시작하지 않는다.
+    app.state.live_accounts = LiveAccounts(
+        db=app.state.db,
+        cipher=(
+            CredentialCipher(settings.kis_credential_key.get_secret_value())
+            if settings.kis_credential_key
+            else None
         ),
-    }
+        master=OverseasMaster(settings.kis_master_cache_dir),
+        classification_file=settings.live_classification_file,
+    )
 
     app.add_middleware(
         CORSMiddleware,
@@ -109,6 +114,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(simulations.router)
     app.include_router(account.router)
     app.include_router(snapshots.router)
+    app.include_router(kis.router)
     return app
 
 

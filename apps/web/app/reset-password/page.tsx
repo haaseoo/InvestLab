@@ -16,7 +16,9 @@ async function startRecovery(hash: string): Promise<Stage> {
   const supabase = getSupabase();
   const accessToken = params.get("access_token");
   const refreshToken = params.get("refresh_token");
-  if (!supabase || params.get("type") !== "recovery" || !accessToken || !refreshToken) {
+  // recovery: 비밀번호 재설정 메일, invite: 운영자가 Supabase에서 보낸 초대 메일(첫 비밀번호 설정)
+  const type = params.get("type");
+  if (!supabase || (type !== "recovery" && type !== "invite") || !accessToken || !refreshToken) {
     return "invalid";
   }
   try {
@@ -31,8 +33,8 @@ async function startRecovery(hash: string): Promise<Stage> {
 }
 
 /**
- * Supabase 비밀번호 재설정 메일의 링크가 도착하는 화면.
- * 링크는 주소의 # 뒤에 일회용 세션(type=recovery)을 싣고 온다. 읽은 즉시 주소에서 지운다.
+ * Supabase 비밀번호 재설정·초대 메일의 링크가 도착하는 화면.
+ * 링크는 주소의 # 뒤에 일회용 세션(type=recovery 또는 invite)을 싣고 온다. 읽은 즉시 주소에서 지운다.
  * 비밀번호는 Supabase Auth로만 보내며 InvestLab 서버를 거치지 않는다.
  */
 export default function ResetPasswordPage() {

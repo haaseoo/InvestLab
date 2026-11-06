@@ -5,10 +5,9 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Response, status
 from starlette.concurrency import run_in_threadpool
 
-from app.core.security import require_live_owner
 from app.db import repositories as repo
 from app.providers.base import PortfolioProvider
-from app.routers.deps import DatabaseDep, ProviderDep, SettingsDep, UserDep
+from app.routers.deps import DatabaseDep, LiveAccountsDep, ProviderDep, SettingsDep, UserDep
 from app.schemas.analysis import (
     BuyRequest,
     BuyResponse,
@@ -75,11 +74,12 @@ async def list_history(
 
 @router.post("/history", response_model=SimulationHistoryItem, status_code=status.HTTP_201_CREATED)
 async def save_history(
-    body: SimulationHistoryCreate, user: UserDep, db: DatabaseDep, settings: SettingsDep
+    body: SimulationHistoryCreate, user: UserDep, db: DatabaseDep, live_accounts: LiveAccountsDep
 ) -> SimulationHistoryItem:
-    # LIVE 데이터로 만든 결과는 LIVE 소유자만 저장할 수 있다. Mock 결과는 DEMO로 표시되어 저장된다.
+    # LIVE로 표시된 결과는 본인 KIS 키를 등록한 사용자만 저장할 수 있다.
+    # Mock 결과는 DEMO로 표시되어 저장된다.
     if body.source is Source.LIVE:
-        require_live_owner(user, settings.live_owner_user_id)
+        await live_accounts.provider_for(user)
 
     def run():
         with db.user_transaction(user) as conn:

@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from app.schemas.portfolio import CurrencyCode, Exact, FxRate, Money, Source
 
@@ -15,8 +15,23 @@ MAX_JSON_BYTES = 256 * 1024
 class MeResponse(BaseModel):
     user_id: str
     email: str | None
-    is_live_owner: bool
     database_available: bool
+
+
+class KisCredentialsInput(BaseModel):
+    """요청 본문. 값은 응답·로그에 다시 싣지 않는다."""
+
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    app_key: SecretStr = Field(max_length=128)
+    app_secret: SecretStr = Field(max_length=1024)
+    account_no: SecretStr = Field(max_length=32)
+
+
+class KisCredentialsStatus(BaseModel):
+    registered: bool
+    account_masked: str | None = None
+    updated_at: datetime | None = None
 
 
 class UserSettings(BaseModel):

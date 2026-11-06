@@ -6,6 +6,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.core.errors import DatabaseNotConfiguredError
 from app.db import repositories as repo
+from app.providers.kis import live_provider_status
 from app.routers.deps import ProviderDep, SettingsDep
 from app.schemas.portfolio import (
     AllocationResponse,
@@ -25,10 +26,17 @@ HISTORY_LIMIT = 100
 
 @router.get("/providers/status", response_model=ProvidersStatusResponse)
 async def providers_status(request: Request) -> ProvidersStatusResponse:
-    providers = request.app.state.providers
+    state = request.app.state
     return ProvidersStatusResponse(
         default_source=Source.MOCK,
-        providers=[p.get_provider_status() for p in providers.values()],
+        providers=[
+            state.mock_provider.get_provider_status(),
+            live_provider_status(
+                auth_available=state.token_verifier is not None,
+                database_available=state.db is not None,
+                credential_store_available=state.live_accounts.store_available,
+            ),
+        ],
     )
 
 
@@ -64,7 +72,7 @@ async def history(
 
 
 async def _live_history(request: Request, currency: str) -> list[SnapshotPoint]:
-    """실제 계좌 이력 = 소유자가 저장한 스냅샷. 가상 이력을 만들지 않는다.
+    """실제 계좌 이력 = 사용자 본인이 저장한 스냅샷. 가상 이력을 만들지 않는다.
 
     평가하지 못한 종목이 있는(불완전한) 스냅샷은 총액이 실제보다 작으므로 선에 넣지 않는다.
     """

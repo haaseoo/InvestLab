@@ -22,19 +22,17 @@ class Settings(BaseSettings):
     supabase_url: str | None = None
     jwt_audience: str = "authenticated"
     jwt_leeway_seconds: int = Field(default=30, ge=0, le=120)
-    # LIVE 계좌를 조회할 수 있는 유일한 사용자. 비어 있으면 LIVE 접근은 모두 거부된다.
-    live_owner_user_id: str | None = None
 
     # PostgreSQL 연결 문자열(서버 전용). 사용자 데이터 조회 시에는 트랜잭션마다
     # authenticated 역할로 전환해 RLS를 적용받는다.
     database_url: SecretStr | None = None
 
-    # 한국투자증권 (Phase 4)
-    kis_app_key: SecretStr | None = None
-    kis_app_secret: SecretStr | None = None
-    kis_account_no: SecretStr | None = None
-    # 접근 토큰 캐시(권한 600, .gitignore 대상). 재시작 때 재발급하지 않기 위해 둔다.
-    kis_token_cache_path: Path = REPO_ROOT / ".cache" / "kis_token.json"
+    # 한국투자증권. App Key·Secret·계좌번호는 사용자마다 설정 화면에서 등록하고, DB에는 이 키로
+    # 암호화(AES-256-GCM)해 저장한다. 값은 base64로 인코딩한 32바이트다. 비어 있으면 LIVE를 쓸 수 없다.
+    # 이 키를 잃어버리면 저장된 KIS 키를 복호화할 수 없으므로 사용자가 다시 등록해야 한다.
+    kis_credential_key: SecretStr | None = None
+    # 공개 종목 마스터 파일 캐시(.gitignore 대상). 사용자 정보는 들어 있지 않다.
+    kis_master_cache_dir: Path = REPO_ROOT / ".cache" / "kis_master"
     # 보유 ETF의 자산군·추종 지수 등 KIS가 주지 않는 분류. 없으면 미분류로 표시한다.
     live_classification_file: Path = REPO_ROOT / "data" / "live" / "classifications.json"
 
@@ -43,11 +41,8 @@ class Settings(BaseSettings):
 
     @field_validator(
         "supabase_url",
-        "live_owner_user_id",
         "database_url",
-        "kis_app_key",
-        "kis_app_secret",
-        "kis_account_no",
+        "kis_credential_key",
         "openai_api_key",
         mode="before",
     )

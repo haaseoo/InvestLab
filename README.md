@@ -43,9 +43,9 @@ npm run dev
 
 ## LIVE 모드와 로그인
 
-LIVE 데이터는 **로그인한 계좌 소유자(`LIVE_OWNER_USER_ID`)만** 요청할 수 있습니다. 서버는 Supabase 토큰의 서명·만료·발급자·대상·역할을 검증한 뒤 소유자와 비교하고, 통과한 경우에만 한국투자증권 잔고를 조회합니다. KIS 조회가 실패하면 오류 화면을 보여 주며 Mock 데이터로 대체하지 않습니다.
+LIVE 데이터는 **로그인한 사용자가 본인 한국투자증권 키를 등록했을 때만** 볼 수 있습니다. 서버는 Supabase 토큰의 서명·만료·발급자·대상·역할을 검증한 뒤, 토큰의 사용자 id로 그 사용자의 암호화된 키를 찾아 본인 계좌 잔고만 조회합니다. 다른 사용자의 키나 계좌에 닿는 경로는 없습니다. KIS 조회가 실패하면 오류 화면을 보여 주며 Mock 데이터로 대체하지 않습니다.
 
-- 로그인: 화면 오른쪽 위 **로그인** → 이메일·비밀번호. 신규 가입은 받지 않습니다.
+- 로그인: 화면 오른쪽 위 **로그인** → 이메일·비밀번호. 공개 가입은 받지 않고, 운영자가 Supabase에서 초대합니다(아래 "사용자 초대").
 - 로그인하면 설정(기본 데이터 모드, 계좌번호 마스킹)과 시뮬레이션 결과를 저장할 수 있습니다.
 - Mock 모드는 로그인 없이 동작하며 항상 DEMO로 표시됩니다.
 
@@ -56,7 +56,7 @@ Mock 모드에는 필요 없습니다. 값을 바꾸려면 `cp .env.example .env
 ## Supabase 연결
 
 1. Supabase 프로젝트를 만들고 Authentication에서 본인 계정을 추가한 뒤 **신규 가입을 끕니다.**
-2. 루트 `.env`에 `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `DATABASE_URL`(Session pooler), `LIVE_OWNER_USER_ID`를 넣습니다.
+2. 루트 `.env`에 `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `DATABASE_URL`(Session pooler)을 넣습니다. DB 통합 테스트를 돌리려면 실제 사용자 UID를 `LIVE_OWNER_USER_ID`에 넣습니다(앱은 쓰지 않습니다).
 3. `apps/web/.env.local`에 `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`를 넣습니다.
 4. 마이그레이션을 검증(롤백)한 뒤 적용합니다.
 
@@ -71,12 +71,20 @@ Service Role·Secret Key는 쓰지 않습니다. 서버는 사용자 요청마�
 
 ## 한국투자증권 연결
 
-1. [KIS Developers](https://apiportal.koreainvestment.com/)에서 Open API를 신청하고 App Key·Secret을 발급받습니다.
-2. `.env`에 `KIS_APP_KEY`, `KIS_APP_SECRET`, `KIS_ACCOUNT_NO`(8자리-2자리)를 넣습니다.
-3. `LIVE_OWNER_USER_ID`에 본인의 Supabase 사용자 id를 넣습니다.
-4. (선택) ETF의 유형·추종 지수, 섹터는 KIS가 주지 않습니다. `data/live/classifications.example.json`을 참고해 `data/live/classifications.json`을 만들면 반영됩니다. 이 파일은 커밋되지 않습니다.
+키는 사용자마다 각자 등록합니다. 서버에는 암호화 키 하나만 둡니다.
 
-접근 토큰은 `.cache/kis_token.json`에 저장되어 재시작 때도 재사용됩니다(발급 시 KIS 알림톡이 갑니다). 사용하는 API, 필드 매핑, 호출 제한은 [docs/kis-integration.md](docs/kis-integration.md)에 있습니다.
+1. 서버 `.env`에 `KIS_CREDENTIAL_KEY`(32바이트 base64, 만드는 법은 `.env.example`)를 넣습니다. **따로 백업해 두세요.** 잃어버리거나 바꾸면 모든 사용자가 키를 다시 등록해야 합니다.
+2. 각 사용자는 [KIS Developers](https://apiportal.koreainvestment.com/)에서 Open API를 신청해 App Key·Secret을 발급받습니다.
+3. 로그인 후 **설정 → 내 한국투자증권 연결**에 App Key·Secret·계좌번호(8자리-2자리)를 입력합니다. 서버가 잔고를 한 번 조회해 맞는지 확인한 뒤에만 저장합니다.
+4. (선택) ETF의 유형·추종 지수, 섹터는 KIS가 주지 않습니다. `data/live/classifications.example.json`을 참고해 `data/live/classifications.json`을 만들면 반영됩니다. 이 파일은 서버 전체(모든 사용자)에 적용되며 커밋되지 않습니다.
+
+키와 접근 토큰은 AES-256-GCM으로 암호화해 `public.kis_credentials`에 사용자별로 저장하며(RLS), 토큰은 재시작 때도 재사용됩니다(발급 시 KIS 알림톡이 갑니다). 앱은 조회 API만 부르지만, KIS App Key 자체는 주문 권한도 있고 서버 운영자는 기술적으로 복호화할 수 있습니다. 등록하는 사람에게 이 점을 알려 주세요. 사용하는 API, 필드 매핑, 호출 제한은 [docs/kis-integration.md](docs/kis-integration.md)에 있습니다.
+
+### 사용자 초대
+
+공개 가입은 꺼 둡니다. Supabase 대시보드 **Authentication → Users → Invite user**로 초대하면, 받은 사람이 메일 링크에서 비밀번호를 정하고 로그인합니다. 링크가 배포한 웹 주소로 오도록 **Authentication → URL Configuration**의 Site URL과 Redirect URLs에 웹 주소를 넣어 두세요. 웹을 배포하기 전에는 링크가 `localhost`로 가므로 초대받은 사람의 기기에서 열리지 않습니다.
+
+로그인 아이디는 이메일입니다. 비밀번호는 Supabase Auth만 다루며 InvestLab 서버를 거치지 않습니다. 비밀번호를 잊으면 같은 화면에서 재설정 메일을 보냅니다.
 
 ## 테스트
 
@@ -92,16 +100,16 @@ cd apps/web && npx tsc --noEmit && npm run lint && npx prettier --check . && npm
 - 보유 종목: 검색, 정렬, 원화 환산/거래 통화 전환, 모바일 카드 보기
 - 분석: 상위 1·3·5 종목 집중도, HHI·유효 종목 수, 자산군·투자 대상 국가·섹터·거래 통화 비중, 동일 지수 추종 ETF, ETF 구성 종목 중복(데이터가 있을 때만), 계산하지 않은 지표와 사유
 - 시뮬레이터: 추가 매수 평균단가, 목표 비중 리밸런싱, 하락 시나리오와 종목별 민감도
-- 설정: 데이터 모드, KIS 연결 상태, 실제 계좌 스냅샷 저장, 시뮬레이션 기록
+- 설정: 데이터 모드, 본인 KIS 키 등록·해제, 서버 LIVE 준비 상태, 실제 계좌 스냅샷 저장, 시뮬레이션 기록
 - LIVE: 한국투자증권 국내·해외 잔고(현재가·평가금액·환율 포함) 조회, 저장한 스냅샷으로 그리는 총자산 변화
 - API: `/health`, `/providers/status`, `/portfolio`, `/portfolio/holdings`, `/portfolio/summary`, `/portfolio/history`, `/analytics/allocation`, `/analytics/risk`, `/simulations/buy`, `/simulations/rebalance`, `/simulations/scenario`
 - 시세·환율 누락 처리, LIVE 접근 차단, CORS 제한, 로그 마스킹
 
-- 로그인·로그아웃, 소유자 전용 LIVE 인가, 사용자 설정·시뮬레이션 기록 저장, 실제 계좌 스냅샷 저장 구조
+- 로그인·로그아웃, 초대 링크로 첫 비밀번호 설정, 사용자별 KIS 키(암호화 저장), 사용자 설정·시뮬레이션 기록 저장, 실제 계좌 스냅샷 저장 구조
 
-AI 리포트 화면은 안내 문구만 표시합니다. 실제 계좌 스냅샷은 소유자가 설정 화면에서 직접 저장합니다(자동 저장 없음).
+AI 리포트 화면은 안내 문구만 표시합니다. 실제 계좌 스냅샷은 각 사용자가 설정 화면에서 직접 저장합니다(자동 저장 없음).
 
-KIS 테스트는 가짜 전송 계층만 쓰며 실제 한국투자증권에 접속하지 않습니다. `integration` 표시가 붙은 테스트는 실제 Supabase에 접속합니다. DB 테스트는 하나의 트랜잭션 안에서 실행 후 롤백하므로 데이터를 남기지 않습니다. 소유자 계정의 실제 로그인 성공은 비밀번호가 필요해 자동 테스트하지 않으며 직접 확인해야 합니다.
+KIS 테스트는 가짜 전송 계층만 쓰며 실제 한국투자증권에 접속하지 않습니다. `integration` 표시가 붙은 테스트는 실제 Supabase에 접속합니다. DB 테스트는 하나의 트랜잭션 안에서 실행 후 롤백하므로 데이터를 남기지 않습니다. 실제 계정의 로그인 성공은 비밀번호가 필요해 자동 테스트하지 않으며 직접 확인해야 합니다.
 
 ## 향후 개발 계획
 
@@ -119,3 +127,4 @@ KIS 테스트는 가짜 전송 계층만 쓰며 실제 한국투자증권에 접
 - [디자인 시스템](docs/design-system.md)
 - [KIS 연동](docs/kis-integration.md)
 - [실습 기록: 2026-11-02 KIS 실계좌 연동](docs/dev-log/2026-11-02-phase4.md)
+- [실습 기록: 2026-11-06 사용자별 KIS 키와 초대](docs/dev-log/2026-11-06-multi-user-kis.md)

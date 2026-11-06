@@ -19,7 +19,8 @@
 | POST | `/api/v1/simulations/scenario` | `source=live`만 필요 | 구현 |
 | GET | `/api/v1/me` | 필요 | 구현 |
 | GET, PUT | `/api/v1/settings` | 필요 | 구현 |
-| GET, POST | `/api/v1/snapshots` | 필요 (POST는 LIVE 소유자) | 구현 |
+| GET, POST | `/api/v1/snapshots` | 필요 (POST는 본인 KIS 키 등록) | 구현 |
+| GET, PUT, DELETE | `/api/v1/kis/credentials` | 필요 | 구현 |
 | GET, DELETE | `/api/v1/snapshots/{id}` | 필요 | 구현 |
 | GET, POST | `/api/v1/simulations/history` | 필요 | 구현 |
 | DELETE | `/api/v1/simulations/history/{id}` | 필요 | 구현 |
@@ -45,7 +46,6 @@
 | --- | --- | --- |
 | 401 | `AUTH_REQUIRED` | 토큰 없음 |
 | 401 | `INVALID_TOKEN` | 토큰 무효 |
-| 403 | `LIVE_FORBIDDEN` | 계좌 소유자가 아님 |
 | 404 | `HOLDING_NOT_FOUND` | 시뮬레이션 대상 종목이 보유 종목에 없음 |
 | 422 | `VALIDATION_ERROR` | 요청 형식 오류. `details.fields`에 항목, `details.reasons`에 사유 |
 | 422 | `INVALID_SIMULATION_INPUT` | 시뮬레이션 입력이 계산 조건에 맞지 않음(목표 합계, 모르는 항목 등) |
@@ -58,8 +58,10 @@
 | 503 | `AUTH_UNAVAILABLE` | 인증 서버 공개 키를 가져오지 못함 |
 | 503 | `DB_NOT_CONFIGURED` | `DATABASE_URL` 미설정 |
 | 503 | `DB_UNAVAILABLE` | DB 접속·쿼리 실패. 상세 원인은 응답에 싣지 않음 |
-| 503 | `LIVE_OWNER_NOT_CONFIGURED` | `LIVE_OWNER_USER_ID` 미설정 |
-| 503 | `KIS_NOT_CONFIGURED` | KIS App Key·Secret·계좌번호 미설정 또는 계좌 형식 오류 |
+| 409 | `KIS_NOT_CONFIGURED` | 본인 KIS 키를 등록하지 않음 |
+| 409 | `KIS_CREDENTIALS_UNREADABLE` | 저장된 키를 복호화하지 못함(마스터 키 변경 등). 다시 등록 필요 |
+| 422 | `INVALID_KIS_CREDENTIALS` | 키·계좌번호 형식 오류. `details.reasons`에 사유(입력값은 싣지 않음) |
+| 503 | `KIS_CREDENTIAL_STORE_NOT_CONFIGURED` | `KIS_CREDENTIAL_KEY` 미설정 |
 | 503 | `KIS_AUTH_FAILED` | KIS 접근 토큰 발급 거부. `details.kis_code`만 포함 |
 | 503 | `KIS_RATE_LIMITED` | KIS 호출 한도(`EGW00201`) 또는 토큰 재발급 1분 제한 |
 | 503 | `KIS_UNAVAILABLE` | KIS 서버 연결 실패·시간 초과 |
@@ -268,7 +270,7 @@ Mock 응답 예시(발췌):
 ## GET /api/v1/me
 
 ```json
-{ "user_id": "uuid", "email": "owner@example.com", "is_live_owner": true, "database_available": true }
+{ "user_id": "uuid", "email": "user@example.com", "database_available": true }
 ```
 
 ## GET·PUT /api/v1/settings
@@ -281,12 +283,18 @@ PUT 본문은 `updated_at`을 뺀 같은 형식입니다. `theme`은 `light`·`d
 
 ## 스냅샷
 
-- `POST /api/v1/snapshots?source=live`: LIVE Provider에서 현재 보유 데이터를 받아 검증 후 저장합니다. 201과 상세를 반환합니다. `source=mock`은 422 `MOCK_SNAPSHOT_FORBIDDEN`, 소유자가 아니면 403입니다. KIS 조회가 실패하면 해당 KIS 오류를 반환하며 아무것도 저장하지 않습니다. 같은 30초 캐시 결과를 두 번 저장하면 409 `SNAPSHOT_EXISTS`입니다.
+- `POST /api/v1/snapshots?source=live`: LIVE Provider에서 현재 보유 데이터를 받아 검증 후 저장합니다. 201과 상세를 반환합니다. `source=mock`은 422 `MOCK_SNAPSHOT_FORBIDDEN`, 본인 키가 없으면 409 `KIS_NOT_CONFIGURED`입니다. KIS 조회가 실패하면 해당 KIS 오류를 반환하며 아무것도 저장하지 않습니다. 같은 30초 캐시 결과를 두 번 저장하면 409 `SNAPSHOT_EXISTS`입니다.
 - `GET /api/v1/snapshots?limit=30`: 기준 시각 최신순 요약 목록
 - `GET /api/v1/snapshots/{id}`: 상세(`fx_rates`, `content_hash`, `holdings`). 본인 것이 아니면 404
 - `DELETE /api/v1/snapshots/{id}`: 204. 종목 스냅샷도 함께 삭제됩니다.
 
+## 한국투자증권 키
+
+- `GET /api/v1/kis/credentials`: `{ "registered": true, "account_masked": "********01", "updated_at": "…" }`. 키는 다시 내보내지 않습니다.
+- `PUT /api/v1/kis/credentials`: `{ "app_key": "…", "app_secret": "…", "account_no": "12345678-01" }`. 잔고를 한 번 조회해 확인한 뒤 암호화해 저장하고 위 상태를 돌려줍니다. 키가 틀리면 `KIS_AUTH_FAILED` 등 KIS 오류를 돌려주며 저장하지 않습니다.
+- `DELETE /api/v1/kis/credentials`: 204. 키와 접근 토큰을 삭제합니다. 스냅샷·기록은 남습니다.
+
 ## 시뮬레이션 기록
 
-- `POST /api/v1/simulations/history`: `{ "simulation_type": "buy|rebalance|scenario", "source": "mock|live", "input": {}, "result": {}, "as_of": null }`. 각 JSON은 256KB 이하입니다. `source=live` 결과는 LIVE 소유자만 저장할 수 있고, Mock 결과는 `is_demo: true`로 저장됩니다.
+- `POST /api/v1/simulations/history`: `{ "simulation_type": "buy|rebalance|scenario", "source": "mock|live", "input": {}, "result": {}, "as_of": null }`. 각 JSON은 256KB 이하입니다. `source=live` 결과는 본인 KIS 키를 등록한 사용자만 저장할 수 있고, Mock 결과는 `is_demo: true`로 저장됩니다.
 - `GET /api/v1/simulations/history?limit=20`, `DELETE /api/v1/simulations/history/{id}`

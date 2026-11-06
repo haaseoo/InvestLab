@@ -1,4 +1,4 @@
-"""한국투자증권 LIVE Provider(조회 전용).
+"""한국투자증권 LIVE Provider(조회 전용). 인스턴스 하나가 사용자 한 명의 계좌 하나를 맡는다.
 
 - 국내 잔고(TTTC8434R)와 해외 체결기준현재잔고(CTRP6504R) 두 번의 조회로 보유 종목, 현재가,
   평가금액, 환율, 예수금을 모두 얻는다. 별도 시세 API는 부르지 않는다.
@@ -11,17 +11,16 @@
 
 import asyncio
 import logging
-import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
+from typing import Protocol
 
-from app.core.config import Settings
-from app.core.errors import KisNotConfiguredError
-from app.core.logging import mask_account
 from app.integrations.kis.classification import Classification, load_classifications
 from app.integrations.kis.client import KisClient
-from app.integrations.kis.master import OverseasMaster, SecurityKind
+from app.integrations.kis.credentials import KisCredentials
+from app.integrations.kis.master import SecurityKind
 from app.integrations.kis.parse import KisFx, KisHolding, parse_domestic, parse_overseas
 from app.providers.base import PortfolioProvider
 from app.schemas.analysis import EtfComposition
@@ -53,13 +52,6 @@ VALUATION_BASE = "KRW"
 DOMESTIC_GROUP_KIND = {"ST": SecurityKind.STOCK, "EF": SecurityKind.ETF}
 
 
-def parse_account(value: str) -> tuple[str, str]:
-    match = re.fullmatch(r"(\d{8})-?(\d{2})", value.strip())
-    if not match:
-        raise KisNotConfiguredError("KIS 계좌번호 형식이 올바르지 않습니다(8자리-2자리).")
-    return match.group(1), match.group(2)
-
-
 @dataclass(frozen=True)
 class LiveData:
     holdings: list[KisHolding]
@@ -75,49 +67,18 @@ class KISPortfolioProvider(PortfolioProvider):
 
     def __init__(
         self,
-        settings: Settings,
-        auth_available: bool = False,
-        database_available: bool = False,
-        client: KisClient | None = None,
-        master: OverseasMaster | None = None,
+        credentials: KisCredentials,
+        client: KisClient,
+        master: "MasterLookup",
+        classification_file: Path,
     ):
-        self._settings = settings
-        self._auth_available = auth_available
-        self._database_available = database_available
+        self.credentials = credentials
         self._client = client
         self._master = master
+        self._classification_file = classification_file
         self._lock = asyncio.Lock()
         self._cached: LiveData | None = None
         self._domestic_kinds: dict[str, str | None] = {}
-
-    # --- 설정 ---
-
-    @property
-    def configured(self) -> bool:
-        s = self._settings
-        return bool(s.kis_app_key and s.kis_app_secret and s.kis_account_no)
-
-    def _account(self) -> tuple[str, str]:
-        if not self._settings.kis_account_no:
-            raise KisNotConfiguredError()
-        return parse_account(self._settings.kis_account_no.get_secret_value())
-
-    def _get_client(self) -> KisClient:
-        if self._client is None:
-            s = self._settings
-            if not (s.kis_app_key and s.kis_app_secret):
-                raise KisNotConfiguredError()
-            self._client = KisClient(
-                s.kis_app_key.get_secret_value(),
-                s.kis_app_secret.get_secret_value(),
-                s.kis_token_cache_path,
-            )
-        return self._client
-
-    def _get_master(self) -> OverseasMaster:
-        if self._master is None:
-            self._master = OverseasMaster(self._settings.kis_token_cache_path.parent / "kis_master")
-        return self._master
 
     # --- 조회 ---
 
@@ -133,10 +94,8 @@ class KISPortfolioProvider(PortfolioProvider):
             return self._cached
 
     async def _fetch(self) -> LiveData:
-        if not self.configured:
-            raise KisNotConfiguredError()
-        cano, product = self._account()
-        client = self._get_client()
+        cano, product = self.credentials.cano, self.credentials.product
+        client = self._client
 
         domestic_pages = await client.get_pages(
             DOMESTIC_BALANCE,
@@ -184,11 +143,11 @@ class KISPortfolioProvider(PortfolioProvider):
     async def _kind(self, h: KisHolding) -> str | None:
         """판별에 실패하면 None(알 수 없음)이다. 주식으로 가정하지 않는다."""
         if not h.domestic:
-            return await self._get_master().kind(h.exchange_code, h.symbol)
+            return await self._master.kind(h.exchange_code, h.symbol)
         if h.symbol in self._domestic_kinds:
             return self._domestic_kinds[h.symbol]
         try:
-            res = await self._get_client().get(
+            res = await self._client.get(
                 DOMESTIC_INFO, "CTPF1002R", {"PRDT_TYPE_CD": "300", "PDNO": h.symbol}
             )
             output = res.body.get("output") or {}
@@ -257,7 +216,7 @@ class KISPortfolioProvider(PortfolioProvider):
 
     async def get_holdings(self, valuation_currency: str) -> list[Holding]:
         data = await self._load()
-        overrides = load_classifications(self._settings.live_classification_file)
+        overrides = load_classifications(self._classification_file)
         fx_rates = self._fx_rates(data)
         return [
             build_holding(
@@ -283,9 +242,8 @@ class KISPortfolioProvider(PortfolioProvider):
 
     async def get_account_summary(self) -> AccountSummary:
         data = await self._load()
-        cano, product = self._account()
         return AccountSummary(
-            account_masked=mask_account(cano + product),
+            account_masked=self.credentials.account_masked,
             cash_balances=data.cash or None,
             as_of=data.retrieved_at,
             source=self.source,
@@ -301,40 +259,37 @@ class KISPortfolioProvider(PortfolioProvider):
         return []
 
     def get_provider_status(self) -> ProviderStatus:
-        s = self._settings
-        account_ok = False
-        if s.kis_account_no:
-            try:
-                parse_account(s.kis_account_no.get_secret_value())
-                account_ok = True
-            except KisNotConfiguredError:
-                account_ok = False
-        checks = [
-            ProviderCheck(
-                key="kis_credentials",
-                label="KIS App Key·Secret 설정",
-                ok=bool(s.kis_app_key and s.kis_app_secret),
-            ),
-            ProviderCheck(key="kis_account", label="KIS 계좌번호 설정", ok=account_ok),
-            ProviderCheck(key="auth", label="사용자 인증(Supabase) 연결", ok=self._auth_available),
-            ProviderCheck(
-                key="database", label="스냅샷 저장소(DB) 연결", ok=self._database_available
-            ),
-            ProviderCheck(
-                key="owner", label="LIVE 계좌 소유자 지정", ok=bool(s.live_owner_user_id)
-            ),
-        ]
-        required = {"kis_credentials", "kis_account", "auth", "owner"}
-        ready = all(c.ok for c in checks if c.key in required)
-        return ProviderStatus(
-            source=self.source,
-            state="ready" if ready else "not_configured",
-            is_demo=False,
-            label="LIVE",
-            message=(
-                "한국투자증권 계좌를 조회 전용으로 연결합니다. 소유자로 로그인하면 볼 수 있습니다."
-                if ready
-                else "한국투자증권 연결에 필요한 설정이 빠져 있습니다."
-            ),
-            checks=checks,
-        )
+        return live_provider_status(True, True, True)
+
+
+class MasterLookup(Protocol):
+    async def kind(self, exchange: str, symbol: str) -> str | None: ...
+
+
+def live_provider_status(
+    auth_available: bool, database_available: bool, credential_store_available: bool
+) -> ProviderStatus:
+    """서버 쪽 LIVE 준비 상태. 사용자별 키 등록 여부는 /kis/credentials에서 따로 확인한다."""
+    checks = [
+        ProviderCheck(key="auth", label="사용자 인증(Supabase) 연결", ok=auth_available),
+        ProviderCheck(key="database", label="데이터베이스 연결", ok=database_available),
+        ProviderCheck(
+            key="credential_store",
+            label="키 암호화 설정(KIS_CREDENTIAL_KEY)",
+            ok=credential_store_available,
+        ),
+    ]
+    ready = all(c.ok for c in checks)
+    return ProviderStatus(
+        source=Source.LIVE,
+        state="ready" if ready else "not_configured",
+        is_demo=False,
+        label="LIVE",
+        message=(
+            "로그인한 뒤 설정에서 본인의 한국투자증권 App Key·Secret·계좌번호를 등록하면 "
+            "본인 계좌를 조회 전용으로 볼 수 있습니다."
+            if ready
+            else "서버에 LIVE 조회에 필요한 설정이 빠져 있습니다."
+        ),
+        checks=checks,
+    )

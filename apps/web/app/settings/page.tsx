@@ -6,12 +6,18 @@ import Link from "next/link";
 
 import { useAuth } from "@/components/auth-provider";
 import { Card, DemoBadge } from "@/components/card";
+import { KisCredentialsCard } from "@/components/kis-credentials-card";
 import { ProviderChecklist } from "@/components/query-error";
 import { SimulationError } from "@/components/simulator/sim-ui";
 import { SourceModeSwitcher } from "@/components/source-mode-switcher";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useMe, useSimulationHistory, useSnapshots, useUserSettings } from "@/hooks/use-account";
+import {
+  useKisCredentials,
+  useSimulationHistory,
+  useSnapshots,
+  useUserSettings,
+} from "@/hooks/use-account";
 import { useProvidersStatus } from "@/hooks/use-portfolio";
 import { useSource } from "@/hooks/use-source";
 import { api } from "@/lib/api";
@@ -23,7 +29,7 @@ const SIMULATION_LABEL = { buy: "추가 매수", rebalance: "리밸런싱", scen
 
 function AccountCard() {
   const { configured, session, signOut } = useAuth();
-  const me = useMe();
+  const kis = useKisCredentials();
 
   return (
     <Card title="계정">
@@ -32,8 +38,8 @@ function AccountCard() {
       ) : !session ? (
         <div className="space-y-3">
           <p className="text-sm text-subtle">
-            로그인하면 설정과 시뮬레이션 기록을 저장하고, 소유자 계정은 LIVE 데이터를 조회할 수
-            있습니다.
+            로그인하면 설정과 시뮬레이션 기록을 저장하고, 본인 한국투자증권 키를 등록해 실제 계좌를
+            조회할 수 있습니다.
           </p>
           <Link
             href="/login"
@@ -51,9 +57,15 @@ function AccountCard() {
               <dd className="font-medium break-all">{session.user.email}</dd>
             </div>
             <div>
-              <dt className="text-[13px] text-subtle">LIVE 조회 권한</dt>
+              <dt className="text-[13px] text-subtle">한국투자증권 연결</dt>
               <dd className="font-medium">
-                {me.isPending ? "확인 중" : me.data?.is_live_owner ? "있음 (계좌 소유자)" : "없음"}
+                {kis.isPending
+                  ? "확인 중"
+                  : kis.data?.registered
+                    ? `연결됨 (${kis.data.account_masked})`
+                    : kis.isError
+                      ? "확인하지 못함"
+                      : "없음"}
               </dd>
             </div>
           </dl>
@@ -149,7 +161,7 @@ function PreferencesCard() {
 
 function SnapshotsCard() {
   const { session } = useAuth();
-  const me = useMe();
+  const kis = useKisCredentials();
   const snapshots = useSnapshots();
   const queryClient = useQueryClient();
   const capture = useMutation({
@@ -186,7 +198,7 @@ function SnapshotsCard() {
             ))}
           </ul>
         ))}
-      {me.data?.is_live_owner && (
+      {kis.data?.registered && (
         <div className="mt-3 space-y-2">
           <Button
             variant="outline"
@@ -268,9 +280,10 @@ export default function SettingsPage() {
         </p>
       </Card>
 
+      <KisCredentialsCard />
       <PreferencesCard />
 
-      <Card title="한국투자증권 연결 상태">
+      <Card title="서버 LIVE 준비 상태">
         {status.isPending && <Skeleton className="h-32 rounded-xl" />}
         {status.isError && (
           <p role="alert" className="text-sm text-coral-strong">

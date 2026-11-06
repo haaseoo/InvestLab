@@ -6,8 +6,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import REPO_ROOT
+from app.core.crypto import CredentialKeyError, generate_key
 from app.core.logging import install_log_masking, mask_account, mask_sensitive
 from app.main import create_app
+from app.services.live_accounts import LiveAccounts
 from tests.conftest import OWNER_ID, make_settings
 
 
@@ -25,13 +27,16 @@ class TestHealthAndStatus:
         assert not all(c["ok"] for c in states["live"]["checks"])
 
     def test_status_does_not_leak_secret_values(self):
-        settings = make_settings(
-            kis_app_key="SECRETKEY123", kis_app_secret="SECRETVAL456", kis_account_no="5001234501"
-        )
-        text = TestClient(create_app(settings)).get("/api/v1/providers/status").text
-        assert "SECRETKEY123" not in text
-        assert "SECRETVAL456" not in text
-        assert "5001234501" not in text
+        key = generate_key()
+        settings = make_settings(kis_credential_key=key)
+        body = TestClient(create_app(settings)).get("/api/v1/providers/status")
+        assert key not in body.text
+        live = next(p for p in body.json()["providers"] if p["source"] == "live")
+        assert {c["key"]: c["ok"] for c in live["checks"]}["credential_store"] is True
+
+    def test_invalid_credential_key_fails_startup(self):
+        with pytest.raises(CredentialKeyError):
+            create_app(make_settings(kis_credential_key="not-a-key"))
 
 
 class TestMockPortfolio:
@@ -161,32 +166,45 @@ class TestLiveAccess:
         assert response.status_code == 401
         assert response.json()["error"]["code"] == "INVALID_TOKEN"
 
-    def test_other_user_is_403(self, live_client):
+    def test_user_without_keys_is_not_configured(self, live_client):
         response = live_client.get(
             "/api/v1/portfolio", params={"source": "live"}, headers=bearer("other-token")
         )
-        assert response.status_code == 403
-        assert response.json()["error"]["code"] == "LIVE_FORBIDDEN"
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "KIS_NOT_CONFIGURED"
 
-    def test_missing_owner_config_is_denied(self):
-        app = create_app(make_settings())
+    def test_missing_credential_key_is_denied(self, tmp_path):
         from tests.conftest import FakeVerifier
 
+        app = create_app(make_settings())
+        app.state.token_verifier = FakeVerifier()
+        app.state.db = object()
+        app.state.live_accounts = LiveAccounts(object(), None, object(), tmp_path / "c.json")
+        response = TestClient(app).get(
+            "/api/v1/portfolio", params={"source": "live"}, headers=bearer("owner-token")
+        )
+        assert response.status_code == 503
+        assert response.json()["error"]["code"] == "KIS_CREDENTIAL_STORE_NOT_CONFIGURED"
+
+    def test_missing_database_is_denied(self):
+        from tests.conftest import FakeVerifier
+
+        app = create_app(make_settings(kis_credential_key=generate_key()))
         app.state.token_verifier = FakeVerifier()
         response = TestClient(app).get(
             "/api/v1/portfolio", params={"source": "live"}, headers=bearer("owner-token")
         )
         assert response.status_code == 503
-        assert response.json()["error"]["code"] == "LIVE_OWNER_NOT_CONFIGURED"
+        assert response.json()["error"]["code"] == "DB_NOT_CONFIGURED"
 
     @pytest.mark.parametrize("path", LIVE_ENDPOINTS)
     def test_unconfigured_kis_is_error_not_mock_fallback(self, live_client, path):
         assert OWNER_ID
         response = live_client.get(path, params={"source": "live"}, headers=bearer("owner-token"))
-        assert response.status_code == 503
+        assert response.status_code == 409
         body = response.json()
-        # KIS 설정이 없으면(이력은 DB가 없으면) 오류다. Mock으로 대체하지 않는다.
-        assert body["error"]["code"] in {"KIS_NOT_CONFIGURED", "DB_NOT_CONFIGURED"}
+        # 키를 등록하지 않았으면 오류다. Mock으로 대체하지 않는다.
+        assert body["error"]["code"] == "KIS_NOT_CONFIGURED"
         assert "holdings" not in body
         assert "VOO" not in response.text
 
@@ -407,7 +425,7 @@ class TestSimulationApi:
 
 
 def test_blank_env_values_are_unset():
-    settings = make_settings(database_url="", supabase_url="  ", live_owner_user_id="")
+    settings = make_settings(database_url="", supabase_url="  ", kis_credential_key="")
     assert settings.database_url is None
     assert settings.supabase_url is None
-    assert settings.live_owner_user_id is None
+    assert settings.kis_credential_key is None

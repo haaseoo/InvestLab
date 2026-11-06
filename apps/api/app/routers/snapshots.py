@@ -1,19 +1,18 @@
 """포트폴리오 스냅샷(실제 계좌 실적) API.
 
 - 조회·삭제: 로그인 사용자 본인 것만(RLS).
-- 저장: LIVE 소유자만, 실제 Provider 데이터만. Mock은 저장하지 않는다.
-  KIS가 연결되지 않은 동안 LIVE Provider는 오류를 내므로 저장되는 것이 없다.
+- 저장: 본인 KIS 키로 조회한 실제 데이터만. Mock은 저장하지 않는다.
+  키를 등록하지 않았거나 조회에 실패하면 오류를 내므로 저장되는 것이 없다.
 """
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Request, Response, status
+from fastapi import APIRouter, Query, Response, status
 from starlette.concurrency import run_in_threadpool
 
 from app.core.errors import MockSnapshotForbiddenError
-from app.core.security import require_live_owner
 from app.db import repositories as repo
-from app.routers.deps import DatabaseDep, SettingsDep, UserDep
+from app.routers.deps import DatabaseDep, LiveAccountsDep, SettingsDep, UserDep
 from app.schemas.portfolio import Source
 from app.schemas.user_data import SnapshotDetail, SnapshotListResponse
 from app.services import snapshots as service
@@ -45,16 +44,15 @@ async def get_snapshot(snapshot_id: str, user: UserDep, db: DatabaseDep) -> Snap
 
 @router.post("", response_model=SnapshotDetail, status_code=status.HTTP_201_CREATED)
 async def create_snapshot(
-    request: Request,
     user: UserDep,
     db: DatabaseDep,
     settings: SettingsDep,
+    live_accounts: LiveAccountsDep,
     source: Annotated[Source, Query()],
 ) -> SnapshotDetail:
     if source is not Source.LIVE:
         raise MockSnapshotForbiddenError()
-    require_live_owner(user, settings.live_owner_user_id)
-    provider = request.app.state.providers[Source.LIVE]
+    provider = await live_accounts.provider_for(user)
     record = await service.capture(provider, settings.valuation_currency)
 
     def run():

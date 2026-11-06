@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, LogIn, Minus } from "lucide-react";
+import { Check, KeyRound, LogIn, Minus } from "lucide-react";
 import Link from "next/link";
 
 import { ErrorState } from "@/components/state";
@@ -38,10 +38,10 @@ export function ProviderChecklist({ checks }: { checks: ProviderStatus["checks"]
 const LIVE_ERROR_TITLES: Record<string, string> = {
   AUTH_REQUIRED: "LIVE 데이터는 로그인이 필요합니다",
   INVALID_TOKEN: "로그인이 만료되었습니다",
-  LIVE_FORBIDDEN: "이 계정은 LIVE 조회 권한이 없습니다",
   AUTH_NOT_CONFIGURED: "사용자 인증이 구성되지 않았습니다",
-  LIVE_OWNER_NOT_CONFIGURED: "LIVE 계좌 소유자가 지정되지 않았습니다",
-  KIS_NOT_CONFIGURED: "실제 계좌가 연결되어 있지 않습니다",
+  KIS_NOT_CONFIGURED: "한국투자증권 키를 등록해 주세요",
+  KIS_CREDENTIALS_UNREADABLE: "저장된 한국투자증권 키를 읽을 수 없습니다",
+  KIS_CREDENTIAL_STORE_NOT_CONFIGURED: "서버에 키 암호화 설정이 없습니다",
   KIS_AUTH_FAILED: "한국투자증권 인증에 실패했습니다",
   KIS_RATE_LIMITED: "한국투자증권 호출 한도에 걸렸습니다",
   KIS_UNAVAILABLE: "한국투자증권 서버에 연결하지 못했습니다",
@@ -72,13 +72,14 @@ export function QueryError({ error, onRetry }: { error: Error; onRetry: () => vo
     const live = status.data?.providers.find((p) => p.source === "live");
     const code = apiError?.code ?? "";
     const needsLogin = code === "AUTH_REQUIRED" || code === "INVALID_TOKEN";
+    const needsKeys = code === "KIS_NOT_CONFIGURED" || code === "KIS_CREDENTIALS_UNREADABLE";
     const title = LIVE_ERROR_TITLES[code] ?? "실제 계좌 데이터를 불러오지 못했습니다";
     return (
       <ErrorState
         title={title}
         description={`${apiError?.message ?? "LIVE 데이터를 조회하지 못했습니다."} 가상 데이터로 대체하지 않습니다. 시연 데이터를 보려면 상단에서 MOCK을 선택하세요.`}
         code={apiError?.code}
-        onRetry={needsLogin ? undefined : onRetry}
+        onRetry={needsLogin || needsKeys ? undefined : onRetry}
       >
         {needsLogin && (
           <Link
@@ -89,7 +90,16 @@ export function QueryError({ error, onRetry }: { error: Error; onRetry: () => vo
             로그인
           </Link>
         )}
-        {live && live.checks.length > 0 && (
+        {needsKeys && (
+          <Link
+            href="/settings#kis"
+            className="inline-flex h-11 items-center gap-1.5 rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground hover:bg-primary/85"
+          >
+            <KeyRound className="size-4" aria-hidden="true" />
+            설정에서 키 등록
+          </Link>
+        )}
+        {!needsKeys && live && live.checks.length > 0 && (
           <div className="w-full max-w-sm rounded-xl bg-secondary/60 p-4">
             <h3 className="mb-3 text-left text-sm font-semibold">LIVE 연결 준비 상태</h3>
             <ProviderChecklist checks={live.checks} />

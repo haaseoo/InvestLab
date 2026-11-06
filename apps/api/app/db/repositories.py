@@ -4,6 +4,8 @@ RLS가 본인 행만 보여 주지만, 의도를 분명히 하려고 조건에�
 """
 
 import json
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import Connection, text
@@ -248,4 +250,97 @@ def _simulation(row: Any) -> SimulationHistoryItem:
         result=row["result_json"],
         as_of=row["as_of"],
         created_at=row["created_at"],
+    )
+
+
+# ---------------------------------------------------------------- KIS 인증정보(암호문만 다룬다)
+
+
+@dataclass(frozen=True)
+class KisCredentialRow:
+    credentials_enc: bytes
+    account_masked: str
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
+class KisTokenRow:
+    token_enc: bytes
+    expires_at: datetime
+
+
+def get_kis_credentials(conn: Connection) -> KisCredentialRow | None:
+    row = conn.execute(
+        text(
+            "select credentials_enc, account_masked, updated_at "
+            "from public.kis_credentials where user_id = auth.uid()"
+        )
+    ).first()
+    if row is None:
+        return None
+    return KisCredentialRow(bytes(row[0]), row[1], row[2])
+
+
+def put_kis_credentials(
+    conn: Connection,
+    credentials_enc: bytes,
+    account_masked: str,
+    token_enc: bytes | None,
+    token_expires_at: datetime | None,
+) -> KisCredentialRow:
+    """인증정보를 바꾸면 이전 키로 발급된 토큰도 함께 바꾼다(검증할 때 발급한 토큰 또는 없음)."""
+    row = conn.execute(
+        text(
+            "insert into public.kis_credentials "
+            "(user_id, credentials_enc, account_masked, token_enc, token_expires_at) "
+            "values (auth.uid(), :cred, :masked, :token, :expires) "
+            "on conflict (user_id) do update set "
+            "credentials_enc = excluded.credentials_enc, "
+            "account_masked = excluded.account_masked, "
+            "token_enc = excluded.token_enc, token_expires_at = excluded.token_expires_at, "
+            "updated_at = now() "
+            "returning credentials_enc, account_masked, updated_at"
+        ),
+        {
+            "cred": credentials_enc,
+            "masked": account_masked,
+            "token": token_enc,
+            "expires": token_expires_at,
+        },
+    ).one()
+    return KisCredentialRow(bytes(row[0]), row[1], row[2])
+
+
+def delete_kis_credentials(conn: Connection) -> bool:
+    deleted = conn.execute(
+        text("delete from public.kis_credentials where user_id = auth.uid() returning user_id")
+    ).first()
+    return deleted is not None
+
+
+def get_kis_token(conn: Connection) -> KisTokenRow | None:
+    row = conn.execute(
+        text(
+            "select token_enc, token_expires_at from public.kis_credentials "
+            "where user_id = auth.uid() and token_enc is not null"
+        )
+    ).first()
+    if row is None:
+        return None
+    return KisTokenRow(bytes(row[0]), row[1])
+
+
+def set_kis_token(
+    conn: Connection,
+    token_enc: bytes | None,
+    expires_at: datetime | None,
+    credentials_updated_at: datetime,
+) -> None:
+    """인증정보가 그 사이 바뀌었으면(updated_at 불일치) 이전 키의 토큰을 덮어쓰지 않는다."""
+    conn.execute(
+        text(
+            "update public.kis_credentials set token_enc = :token, token_expires_at = :expires "
+            "where user_id = auth.uid() and updated_at = :version"
+        ),
+        {"token": token_enc, "expires": expires_at, "version": credentials_updated_at},
     )

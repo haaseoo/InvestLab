@@ -10,6 +10,8 @@ import type {
 } from "@/types/analysis";
 import type { History, Portfolio, ProvidersStatus, Source } from "@/types/portfolio";
 import type {
+  KisCredentialsInput,
+  KisCredentialsStatus,
   Me,
   SimulationHistory,
   SimulationHistoryCreate,
@@ -134,6 +136,16 @@ export const api = {
       body,
       auth: true,
     }),
+  kisCredentials: (signal?: AbortSignal) =>
+    request<KisCredentialsStatus>("/api/v1/kis/credentials", { signal, auth: true }),
+  putKisCredentials: (body: KisCredentialsInput) =>
+    request<KisCredentialsStatus>("/api/v1/kis/credentials", {
+      method: "PUT",
+      body,
+      auth: true,
+    }),
+  deleteKisCredentials: () =>
+    request<void>("/api/v1/kis/credentials", { method: "DELETE", auth: true }),
   deleteSimulation: (id: string) =>
     request<void>(`/api/v1/simulations/history/${encodeURIComponent(id)}`, {
       method: "DELETE",
