@@ -34,9 +34,14 @@ function ChartTooltip({
   );
 }
 
+const assetClassColor = (slice: AllocationSlice) =>
+  ASSET_CLASS_COLORS[slice.key] ?? FALLBACK_CHART_COLOR;
+
 interface AssetAllocationChartProps {
   slices: AllocationSlice[];
   currency: string;
+  /** 조각 색. 기본은 자산군별 고정색이다. */
+  colorOf?: (slice: AllocationSlice) => string;
   /** 도넛 가운데 값 */
   centerLabel: string;
   centerValue: string;
@@ -47,6 +52,7 @@ export function AssetAllocationChart({
   currency,
   centerLabel,
   centerValue,
+  colorOf = assetClassColor,
 }: AssetAllocationChartProps) {
   const data: ChartDatum[] = slices.map((slice) => ({
     key: slice.key,
@@ -77,8 +83,8 @@ export function AssetAllocationChart({
               cornerRadius={4}
               isAnimationActive={false}
             >
-              {data.map(({ key }) => (
-                <Cell key={key} fill={ASSET_CLASS_COLORS[key] ?? FALLBACK_CHART_COLOR} />
+              {data.map(({ key, slice }) => (
+                <Cell key={key} fill={colorOf(slice)} />
               ))}
             </Pie>
             <Tooltip content={<ChartTooltip currency={currency} />} />
@@ -95,7 +101,7 @@ export function AssetAllocationChart({
           <li key={slice.key} className="flex items-center gap-2.5 text-sm">
             <span
               className="size-2.5 shrink-0 rounded-full"
-              style={{ background: ASSET_CLASS_COLORS[slice.key] ?? FALLBACK_CHART_COLOR }}
+              style={{ background: colorOf(slice) }}
               aria-hidden="true"
             />
             <span className="min-w-0 flex-1 truncate text-subtle">{slice.label}</span>

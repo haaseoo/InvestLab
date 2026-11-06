@@ -1,6 +1,7 @@
 "use client";
 
 import { Coins, Layers, Percent, TrendingUp, Wallet } from "lucide-react";
+import Link from "next/link";
 
 import { AIInsightCard } from "@/components/ai-insight-card";
 import { AssetAllocationChart } from "@/components/asset-allocation-chart";
@@ -13,7 +14,9 @@ import { PortfolioChart } from "@/components/portfolio-chart";
 import { QueryError } from "@/components/query-error";
 import { StatCard } from "@/components/stat-card";
 import { LoadingSkeleton } from "@/components/state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useHistory, usePortfolio, useRisk } from "@/hooks/use-portfolio";
+import { sectorColor, sectorDonutSlices } from "@/lib/chart";
 import {
   directionOf,
   formatKrwCompact,
@@ -137,6 +140,57 @@ function HistoryCard({
   );
 }
 
+/** 섹터별 구성. 분석 엔진의 섹터 비중(risk.allocations.sector)을 그린다. */
+function SectorCard({
+  slices,
+  isLoading,
+  isError,
+  currency,
+  centerValue,
+}: {
+  slices: AllocationSlice[] | undefined;
+  isLoading: boolean;
+  isError: boolean;
+  currency: string;
+  centerValue: string;
+}) {
+  const donut = slices ? sectorDonutSlices(slices) : [];
+  const allUnclassified = donut.length > 0 && donut.every((s) => s.is_unclassified);
+  return (
+    <Card
+      title="섹터별 구성"
+      action={
+        <Link href="/analytics" className="text-[13px] text-subtle hover:text-foreground">
+          자세히
+        </Link>
+      }
+    >
+      {isLoading ? (
+        <Skeleton className="mx-auto aspect-square w-full max-w-[220px] rounded-full" />
+      ) : isError || !slices ? (
+        <EmptyState title="섹터 비중을 불러오지 못했습니다" className="flex-1" />
+      ) : donut.length === 0 ? (
+        <EmptyState title="표시할 자산이 없습니다" className="flex-1" />
+      ) : (
+        <>
+          <AssetAllocationChart
+            slices={donut}
+            currency={currency}
+            centerLabel="총 평가자산"
+            centerValue={centerValue}
+            colorOf={(slice) => sectorColor(slice, donut)}
+          />
+          {allUnclassified && (
+            <p className="mt-3 text-[13px] text-subtle">
+              섹터 정보가 있는 종목이 없습니다. 해외 개별주는 한국투자증권 업종 분류로 채웁니다.
+            </p>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
 export default function DashboardPage() {
   const portfolio = usePortfolio();
   const history = useHistory();
@@ -150,6 +204,10 @@ export default function DashboardPage() {
   const { data } = portfolio;
   const { summary } = data;
   const currency = summary.valuation_currency;
+  const centerValue =
+    summary.total_market_value === null
+      ? "–"
+      : `${formatKrwCompact(Number(summary.total_market_value))}원`;
 
   return (
     <div>
@@ -202,22 +260,13 @@ export default function DashboardPage() {
           isError={history.isError}
           isLoading={history.isPending}
         />
-        <Card title="자산 구성">
-          {data.allocation.length > 0 ? (
-            <AssetAllocationChart
-              slices={data.allocation}
-              currency={currency}
-              centerLabel="총 평가자산"
-              centerValue={
-                summary.total_market_value === null
-                  ? "–"
-                  : `${formatKrwCompact(Number(summary.total_market_value))}원`
-              }
-            />
-          ) : (
-            <EmptyState title="표시할 자산이 없습니다" className="flex-1" />
-          )}
-        </Card>
+        <SectorCard
+          slices={risk.data?.allocations.sector}
+          isLoading={risk.isPending}
+          isError={risk.isError}
+          currency={currency}
+          centerValue={centerValue}
+        />
       </div>
 
       <div className="mt-3 grid gap-3 md:mt-4 md:gap-4 lg:grid-cols-3">
@@ -235,6 +284,22 @@ export default function DashboardPage() {
           limit={4}
           showLink
         />
+      </div>
+
+      {/* 지금 연결된 계좌는 해외 개별주만이라 자산군 구성은 보조 정보로 아래에 둔다. */}
+      <div className="mt-3 grid gap-3 md:mt-4 md:gap-4 lg:grid-cols-3">
+        <Card title="자산 구성">
+          {data.allocation.length > 0 ? (
+            <AssetAllocationChart
+              slices={data.allocation}
+              currency={currency}
+              centerLabel="총 평가자산"
+              centerValue={centerValue}
+            />
+          ) : (
+            <EmptyState title="표시할 자산이 없습니다" className="flex-1" />
+          )}
+        </Card>
       </div>
 
       <Assumptions items={data.assumptions} />
