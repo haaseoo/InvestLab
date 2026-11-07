@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Database, LogIn, LogOut, Trash2 } from "lucide-react";
+import { ChevronDown, Database, LogIn, LogOut, Trash2 } from "lucide-react";
 import Link from "next/link";
 
 import { useAuth } from "@/components/auth-provider";
@@ -22,7 +22,6 @@ import { useProvidersStatus } from "@/hooks/use-portfolio";
 import { useSource } from "@/hooks/use-source";
 import { api } from "@/lib/api";
 import { formatDateTime, formatMoney } from "@/lib/format";
-import type { Source } from "@/types/portfolio";
 import type { UserSettings } from "@/types/user";
 
 const SIMULATION_LABEL = { buy: "추가 매수", rebalance: "리밸런싱", scenario: "하락 시나리오" };
@@ -81,7 +80,6 @@ function AccountCard() {
 
 function PreferencesCard() {
   const { session } = useAuth();
-  const { setSource } = useSource();
   const settings = useUserSettings();
   const queryClient = useQueryClient();
   const mutation = useMutation({
@@ -110,26 +108,6 @@ function PreferencesCard() {
       {settings.isError && <SimulationError error={settings.error} />}
       {current && (
         <div className="space-y-4 text-sm">
-          <label className="flex items-center justify-between gap-3">
-            <span>
-              <span className="font-medium">로그인 시 기본 데이터 모드</span>
-              <span className="block text-[13px] text-subtle">
-                로그인할 때 이 모드로 전환합니다.
-              </span>
-            </span>
-            <select
-              value={current.preferred_source}
-              onChange={(e) => {
-                const next = e.target.value as Source;
-                save({ preferred_source: next });
-                setSource(next);
-              }}
-              className="h-11 rounded-xl border bg-card px-3 text-base md:text-sm"
-            >
-              <option value="mock">MOCK</option>
-              <option value="live">LIVE</option>
-            </select>
-          </label>
           <label className="flex items-center justify-between gap-3">
             <span>
               <span className="font-medium">계좌번호 마스킹</span>
@@ -175,9 +153,10 @@ function SnapshotsCard() {
 
   if (!session) return null;
   return (
-    <Card title="실제 계좌 스냅샷">
+    <Card title="자산 기록 저장">
       <p className="mb-3 text-[13px] text-subtle">
-        LIVE 계좌의 평가 결과를 기준 시각과 함께 저장합니다. Mock 데이터는 저장하지 않습니다.
+        실제 계좌의 평가 결과를 기준 시각과 함께 저장합니다. 2개 이상 쌓이면 홈에 총자산 변화가
+        나타납니다.
       </p>
       {snapshots.isPending && <Skeleton className="h-16 rounded-xl" />}
       {snapshots.isError && <SimulationError error={snapshots.error} />}
@@ -269,37 +248,46 @@ export default function SettingsPage() {
   const live = status.data?.providers.find((p) => p.source === "live");
 
   return (
-    <div className="grid gap-3 md:gap-4 lg:grid-cols-2">
-      <AccountCard />
+    <div>
+      <div className="grid gap-3 md:gap-4 lg:grid-cols-2">
+        <AccountCard />
 
-      <Card title="데이터 모드" action={<SourceModeSwitcher />}>
-        <p className="text-sm text-subtle">
-          {source === "mock"
-            ? "현재 MOCK 모드입니다. 시연용 가상 데이터를 표시합니다."
-            : "현재 LIVE 모드입니다. 연결된 실제 계좌만 조회하며 가상 데이터로 대체하지 않습니다."}
-        </p>
-      </Card>
-
-      <KisCredentialsCard />
-      <PreferencesCard />
-
-      <Card title="서버 LIVE 준비 상태">
-        {status.isPending && <Skeleton className="h-32 rounded-xl" />}
-        {status.isError && (
-          <p role="alert" className="text-sm text-coral-strong">
-            상태를 확인하지 못했습니다. API 서버 실행 여부를 확인해 주세요.
+        <Card title="보기 모드" action={<SourceModeSwitcher />}>
+          <p className="text-sm text-subtle">
+            {source === "mock"
+              ? "체험용 가상 데이터를 보고 있습니다. 한국투자증권 키를 등록하면 실제 계좌로 바뀝니다."
+              : "연결된 실제 계좌를 보고 있습니다. 조회에 실패해도 가상 데이터로 대신 채우지 않습니다."}
           </p>
-        )}
-        {live && (
-          <div className="space-y-4">
-            <p className="text-sm text-subtle">{live.message}</p>
-            <ProviderChecklist checks={live.checks} />
-          </div>
-        )}
-      </Card>
+        </Card>
 
-      <SnapshotsCard />
-      <HistoryCard />
+        <KisCredentialsCard />
+        <SnapshotsCard />
+        <HistoryCard />
+      </div>
+
+      <details className="group mt-6">
+        <summary className="inline-flex h-10 cursor-pointer list-none items-center gap-1 px-1 text-sm font-semibold text-subtle hover:text-foreground [&::-webkit-details-marker]:hidden">
+          고급 설정
+          <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="mt-2 grid gap-3 md:gap-4 lg:grid-cols-2">
+          <PreferencesCard />
+          <Card title="서버 연결 상태">
+            {status.isPending && <Skeleton className="h-32 rounded-xl" />}
+            {status.isError && (
+              <p role="alert" className="text-sm text-coral-strong">
+                상태를 확인하지 못했습니다. API 서버 실행 여부를 확인해 주세요.
+              </p>
+            )}
+            {live && (
+              <div className="space-y-4">
+                <p className="text-sm text-subtle">{live.message}</p>
+                <ProviderChecklist checks={live.checks} />
+              </div>
+            )}
+          </Card>
+        </div>
+      </details>
     </div>
   );
 }

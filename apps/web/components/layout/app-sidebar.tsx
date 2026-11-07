@@ -64,7 +64,7 @@ export function MobileNav() {
   return (
     <nav
       aria-label="주요 메뉴"
-      className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-6 border-t bg-card pb-[env(safe-area-inset-bottom)] md:hidden"
+      className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t bg-card pb-[env(safe-area-inset-bottom)] md:hidden"
     >
       {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
         const active = isActive(href);
@@ -74,7 +74,7 @@ export function MobileNav() {
             href={href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "flex min-h-14 flex-col items-center justify-center gap-1 text-[10.5px] font-medium tracking-tight",
+              "flex min-h-14 flex-col items-center justify-center gap-1 text-[11.5px] font-medium tracking-tight",
               active ? "text-foreground" : "text-subtle",
             )}
           >

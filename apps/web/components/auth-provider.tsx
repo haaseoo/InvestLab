@@ -54,13 +54,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         queryClient.resetQueries();
       }
       lastUserId.current = userId;
-      // 방금 로그인했다면 저장된 기본 데이터 모드를 적용한다.
+      // 방금 로그인했다면 한국투자증권 키가 등록된 사용자는 실제 계좌(LIVE)를 바로 보여 준다.
+      // 키가 없으면 체험용 가상 데이터(MOCK)를 보여 준다. 로그아웃하면 MOCK으로 돌아간다.
       if (event === "SIGNED_IN" && session) {
         api
-          .getSettings()
-          .then((settings) => setSource(settings.preferred_source))
+          .kisCredentials()
+          .then((status) => setSource(status.registered ? "live" : "mock"))
           .catch(() => undefined);
       }
+      if (event === "SIGNED_OUT") setSource("mock");
     });
     return () => data.subscription.unsubscribe();
   }, [queryClient, setSource]);

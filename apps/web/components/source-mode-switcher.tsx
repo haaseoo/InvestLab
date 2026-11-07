@@ -5,8 +5,8 @@ import { cn } from "@/lib/utils";
 import type { Source } from "@/types/portfolio";
 
 const OPTIONS: { value: Source; label: string }[] = [
-  { value: "mock", label: "MOCK" },
-  { value: "live", label: "LIVE" },
+  { value: "mock", label: "체험" },
+  { value: "live", label: "실제 계좌" },
 ];
 
 export function SourceModeSwitcher() {
@@ -18,7 +18,7 @@ export function SourceModeSwitcher() {
   return (
     <div
       role="group"
-      aria-label="데이터 모드"
+      aria-label="보기 모드"
       className="inline-flex rounded-full border bg-secondary p-1"
     >
       {OPTIONS.map(({ value, label }) => (
@@ -28,7 +28,7 @@ export function SourceModeSwitcher() {
           aria-pressed={source === value}
           onClick={() => select(value)}
           className={cn(
-            "h-9 min-w-16 rounded-full px-3.5 text-[13px] font-semibold tracking-wide transition-colors",
+            "h-9 min-w-16 rounded-full px-3.5 text-[13px] font-semibold transition-colors",
             source === value
               ? "bg-primary text-primary-foreground"
               : "text-subtle hover:text-foreground",

@@ -77,7 +77,7 @@ export function QueryError({ error, onRetry }: { error: Error; onRetry: () => vo
     return (
       <ErrorState
         title={title}
-        description={`${apiError?.message ?? "LIVE 데이터를 조회하지 못했습니다."} 가상 데이터로 대체하지 않습니다. 시연 데이터를 보려면 상단에서 MOCK을 선택하세요.`}
+        description={`${apiError?.message ?? "LIVE 데이터를 조회하지 못했습니다."} 가상 데이터로 대체하지 않습니다. 체험 데이터를 보려면 설정의 보기 모드에서 체험을 선택하세요.`}
         code={apiError?.code}
         onRetry={needsLogin || needsKeys ? undefined : onRetry}
       >
@@ -101,7 +101,7 @@ export function QueryError({ error, onRetry }: { error: Error; onRetry: () => vo
         )}
         {!needsKeys && live && live.checks.length > 0 && (
           <div className="w-full max-w-sm rounded-xl bg-secondary/60 p-4">
-            <h3 className="mb-3 text-left text-sm font-semibold">LIVE 연결 준비 상태</h3>
+            <h3 className="mb-3 text-left text-sm font-semibold">실제 계좌 연결 상태</h3>
             <ProviderChecklist checks={live.checks} />
           </div>
         )}

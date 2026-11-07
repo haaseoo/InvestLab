@@ -1,19 +1,18 @@
 "use client";
 
-import { CircleSlash, Layers } from "lucide-react";
+import { CircleSlash } from "lucide-react";
 
-import { AIInsightCard } from "@/components/ai-insight-card";
 import { AllocationBars } from "@/components/allocation-bars";
 import { AssetAllocationChart } from "@/components/asset-allocation-chart";
 import { Card } from "@/components/card";
 import { Assumptions, DataProvenanceBar } from "@/components/data-provenance";
-import { EmptyState } from "@/components/empty-state";
 import { QueryError } from "@/components/query-error";
 import { RiskIndicator } from "@/components/risk-indicator";
 import { LoadingSkeleton } from "@/components/state";
 import { usePortfolio, useRisk } from "@/hooks/use-portfolio";
 import { formatKrwCompact, formatMoney, formatPercent, MISSING } from "@/lib/format";
 import type { ConstituentOverlap, Risk } from "@/types/analysis";
+import type { AllocationSlice } from "@/types/portfolio";
 
 const OVERLAP_STATUS: Record<ConstituentOverlap["status"], string> = {
   not_applicable: "보유 ETF가 없어 해당하지 않습니다.",
@@ -158,6 +157,16 @@ function OverlapCard({ risk }: { risk: Risk }) {
   );
 }
 
+/** 한 칸이 100%인 분포는 차트로 보여 줄 정보가 없다. */
+function isSingle(slices: AllocationSlice[]) {
+  return slices.length <= 1;
+}
+
+function hasEtfOverlapInfo(risk: Risk) {
+  const { benchmark_groups: groups, constituent_overlap: constituent } = risk.overlap;
+  return groups.length > 0 || constituent.status !== "not_applicable";
+}
+
 export default function AnalyticsPage() {
   const portfolio = usePortfolio();
   const risk = useRisk();
@@ -173,38 +182,19 @@ export default function AnalyticsPage() {
   const { summary } = portfolio.data;
   const r = risk.data;
   const currency = r.valuation_currency;
+  const { asset_class: assetClass, exposure_country: country, currency: fx } = r.allocations;
+
+  // 한 가지뿐이라 생략한 분포. 생략했다는 사실은 한 줄로 알린다.
+  const omitted = [
+    isSingle(assetClass) && assetClass[0] && `자산군(${assetClass[0].label})`,
+    isSingle(country) && country[0] && `국가(${country[0].label})`,
+    isSingle(fx) && fx[0] && `거래 통화(${fx[0].label})`,
+  ].filter(Boolean) as string[];
 
   return (
     <div>
       <DataProvenanceBar portfolio={portfolio.data} isFetching={risk.isFetching} />
       <div className="grid gap-3 md:gap-4 lg:grid-cols-2">
-        <ConcentrationCard risk={r} />
-
-        <Card title="자산군별 비중">
-          {r.allocations.asset_class.length > 0 ? (
-            <AssetAllocationChart
-              slices={r.allocations.asset_class}
-              currency={currency}
-              centerLabel="총 평가자산"
-              centerValue={
-                summary.total_market_value === null
-                  ? MISSING
-                  : `${formatKrwCompact(Number(summary.total_market_value))}원`
-              }
-            />
-          ) : (
-            <EmptyState title="표시할 자산이 없습니다" className="flex-1" />
-          )}
-        </Card>
-
-        <Card title="국가별 비중">
-          <AllocationBars slices={r.allocations.exposure_country} currency={currency} />
-          <Note>
-            투자 대상 국가 기준입니다. 국내에 상장된 해외지수 ETF는 추종 지수의 국가로 분류했습니다.
-            금 등 국가로 나눌 수 없는 자산은 따로 표시합니다.
-          </Note>
-        </Card>
-
         <Card title="섹터별 비중">
           <AllocationBars
             slices={r.allocations.sector}
@@ -219,44 +209,66 @@ export default function AnalyticsPage() {
           </Note>
         </Card>
 
-        <OverlapCard risk={r} />
+        <ConcentrationCard risk={r} />
 
-        <Card title="거래 통화별 비중">
-          <AllocationBars
-            slices={r.allocations.currency}
-            currency={currency}
-            color="var(--chart-2)"
-          />
-          <Note>
-            거래 통화 기준입니다. 원화로 거래되는 해외 ETF의 환 노출과 환헤지 여부는 반영하지
-            않았습니다.
-          </Note>
-        </Card>
+        {!isSingle(country) && (
+          <Card title="국가별 비중">
+            <AllocationBars slices={country} currency={currency} />
+            <Note>
+              투자 대상 국가 기준입니다. 국내에 상장된 해외지수 ETF는 추종 지수의 국가로
+              분류했습니다. 금 등 국가로 나눌 수 없는 자산은 따로 표시합니다.
+            </Note>
+          </Card>
+        )}
 
-        <Card title="계산하지 않은 지표">
-          <ul className="space-y-3">
-            {r.unavailable_metrics.map((metric) => (
-              <li key={metric.key} className="flex gap-3">
-                <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-secondary">
-                  <Layers className="size-3.5 text-faint" aria-hidden="true" />
-                </span>
-                <div>
-                  <p className="text-sm font-medium">{metric.label}</p>
-                  <p className="text-[13px] text-subtle">{metric.reason}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </Card>
+        {!isSingle(assetClass) && (
+          <Card title="자산군별 비중">
+            <AssetAllocationChart
+              slices={assetClass}
+              currency={currency}
+              centerLabel="총 평가자산"
+              centerValue={
+                summary.total_market_value === null
+                  ? MISSING
+                  : `${formatKrwCompact(Number(summary.total_market_value))}원`
+              }
+            />
+          </Card>
+        )}
 
-        <AIInsightCard
-          insights={r.insights}
-          isLoading={false}
-          isError={false}
-          className="lg:col-span-2"
-        />
+        {!isSingle(fx) && (
+          <Card title="거래 통화별 비중">
+            <AllocationBars slices={fx} currency={currency} color="var(--chart-2)" />
+            <Note>
+              거래 통화 기준입니다. 원화로 거래되는 해외 ETF의 환 노출과 환헤지 여부는 반영하지
+              않았습니다.
+            </Note>
+          </Card>
+        )}
+
+        {hasEtfOverlapInfo(r) && <OverlapCard risk={r} />}
       </div>
-      <Assumptions items={r.assumptions} />
+
+      {omitted.length > 0 && (
+        <p className="mt-4 px-1 text-[13px] text-subtle">
+          한 가지뿐이라 비중 차트를 생략한 항목: {omitted.join(", ")}
+        </p>
+      )}
+
+      <Assumptions items={r.assumptions}>
+        {r.unavailable_metrics.length > 0 && (
+          <>
+            <h3 className="mt-4 mb-1 text-[13px] font-semibold text-subtle">계산하지 않은 지표</h3>
+            <ul className="list-disc space-y-1 pl-4 text-xs leading-relaxed text-subtle">
+              {r.unavailable_metrics.map((metric) => (
+                <li key={metric.key}>
+                  {metric.label}: {metric.reason}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </Assumptions>
     </div>
   );
 }

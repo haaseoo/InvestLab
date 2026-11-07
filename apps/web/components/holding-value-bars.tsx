@@ -2,10 +2,11 @@ import { formatMoney, formatPercent } from "@/lib/format";
 import type { Holding } from "@/types/portfolio";
 
 /** 종목별 평가금액. 값을 막대 옆에 직접 표기해 범례·툴팁 없이 읽을 수 있다. */
-export function HoldingValueBars({ holdings }: { holdings: Holding[] }) {
-  const valued = holdings
+export function HoldingValueBars({ holdings, limit }: { holdings: Holding[]; limit?: number }) {
+  const sorted = holdings
     .filter((h) => h.market_value_valuation !== null)
     .sort((a, b) => Number(b.market_value_valuation) - Number(a.market_value_valuation));
+  const valued = limit ? sorted.slice(0, limit) : sorted;
   const max = Number(valued[0]?.market_value_valuation ?? 0);
   const unvalued = holdings.filter((h) => h.market_value_valuation === null);
 

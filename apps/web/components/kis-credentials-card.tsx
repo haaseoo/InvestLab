@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useKisCredentials } from "@/hooks/use-account";
+import { useSource } from "@/hooks/use-source";
 import { api } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import type { KisCredentialsStatus } from "@/types/user";
@@ -27,6 +28,7 @@ export function KisCredentialsCard() {
   const userId = session?.user.id ?? null;
   const status = useKisCredentials();
   const queryClient = useQueryClient();
+  const { setSource } = useSource();
   const [appKey, setAppKey] = useState("");
   const [appSecret, setAppSecret] = useState("");
   const [accountNo, setAccountNo] = useState("");
@@ -49,11 +51,16 @@ export function KisCredentialsCard() {
       setAccountNo("");
       setEditing(false);
       refreshLive(next);
+      // 키를 등록하면 바로 실제 계좌를 보여 준다.
+      setSource("live");
     },
   });
   const remove = useMutation({
     mutationFn: () => api.deleteKisCredentials(),
-    onSuccess: () => refreshLive({ registered: false, account_masked: null, updated_at: null }),
+    onSuccess: () => {
+      refreshLive({ registered: false, account_masked: null, updated_at: null });
+      setSource("mock");
+    },
   });
 
   if (!session) return null;
